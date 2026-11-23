@@ -13,6 +13,7 @@ MODEL = "gpt-6.2-sol"
 EFFORT = "high"
 DIFF_LIMIT = 100_000
 FINDING_LIMIT = 8
+VERDICT_PREFIX = "<!-- d100-gpt-pr-verdict:"
 HUNK = re.compile(r"^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@")
 INSTRUCTIONS = """
 Review this D100 claims-modelling pull request for actionable defects introduced
@@ -53,7 +54,11 @@ SCHEMA = {
 }
 
 
-def request_json(service, url, token, payload=None):
+class GitHubVerdictDenied(RuntimeError):
+    """The repository has disabled formal reviews by its Actions token."""
+
+
+def request_json(service, url, token, payload=None, *, method=None):
     headers = {
         "Authorization": f"Bearer {token}",
         "Accept": "application/json",
@@ -65,25 +70,34 @@ def request_json(service, url, token, payload=None):
         headers["X-GitHub-Api-Version"] = "2022-11-28"
     data = json.dumps(payload).encode() if payload is not None else None
     try:
-        with urlopen(Request(url, data=data, headers=headers), timeout=300) as response:
+        with urlopen(Request(url, data=data, headers=headers, method=method), timeout=300) as response:
             return json.load(response)
     except HTTPError as exc:
         request_id = exc.headers.get("x-request-id") or exc.headers.get("x-github-request-id")
-        if service == "GitHub" and exc.code == 403 and payload and payload.get("event") == "APPROVE":
-            raise RuntimeError(
-                f"GitHub refused the approval (HTTP 403, request {request_id or 'unknown'}). "
-                "Check Settings > Actions > General > Workflow permissions > "
-                "Allow GitHub Actions to create and approve pull requests."
-            ) from None
+        if (
+            service == "GitHub"
+            and exc.code in (403, 422)
+            and payload
+            and payload.get("event") in ("APPROVE", "REQUEST_CHANGES")
+        ):
+            try:
+                message = str(json.load(exc).get("message", "")).lower()
+            except (ValueError, AttributeError):
+                message = ""
+            if "github actions is not permitted" in message and "pull request" in message:
+                raise GitHubVerdictDenied(
+                    "GitHub blocked the bot's formal review. Enable 'Allow GitHub Actions to create "
+                    "and approve pull requests' in Settings > Actions > General > Workflow permissions."
+                ) from None
         raise RuntimeError(f"{service} returned HTTP {exc.code} (request {request_id or 'unknown'}).") from None
     except (URLError, TimeoutError):
         raise RuntimeError(f"{service} request timed out or failed to connect.") from None
 
 
-def github(path, payload=None):
+def github(path, payload=None, *, method=None):
     repo = os.environ["GITHUB_REPOSITORY"]
     url = f"{os.environ['GITHUB_API_URL']}/repos/{repo}{path}"
-    return request_json("GitHub", url, os.environ["GITHUB_TOKEN"], payload)
+    return request_json("GitHub", url, os.environ["GITHUB_TOKEN"], payload, method=method)
 
 
 def pages(path):
@@ -121,6 +135,8 @@ def collect_diff(files):
         path = file["filename"]
         patch = file.get("patch") or ""
         block = {"path": path, "status": file["status"], "diff": patch}
+        if file.get("previous_filename"):
+            block["previous_path"] = file["previous_filename"]
         size = len(json.dumps(block)) + 2
         if not patch or size > remaining:
             continue
@@ -188,15 +204,37 @@ def current_pr(path, head, base=None):
 
 
 def review_marker(head, base):
-    return f"<!-- d100-gpt-pr-verdict:{head}:{base} -->"
+    return f"{VERDICT_PREFIX}{head}:{base} -->"
 
 
-def already_reviewed(path, marker):
-    return any(
-        (review.get("user") or {}).get("login") == "github-actions[bot]"
-        and marker in (review.get("body") or "")
-        for review in pages(f"{path}/reviews")
-    )
+def automated_reviews(path):
+    for entry in pages(f"{path}/reviews"):
+        if (entry.get("user") or {}).get("login") == "github-actions[bot]":
+            yield entry
+
+
+def dismiss_outdated_verdicts(path, reviews, marker):
+    """Prevent a previous bot vote from being mistaken for an incomplete review."""
+    failures = 0
+    for entry in reviews:
+        body = entry.get("body") or ""
+        if (
+            entry["state"] in ("APPROVED", "CHANGES_REQUESTED")
+            and body.startswith(VERDICT_PREFIX)
+            and marker not in body
+        ):
+            try:
+                github(
+                    f"{path}/reviews/{entry['id']}/dismissals",
+                    {"message": "A newer revision could not receive a formal automated verdict."},
+                    method="PUT",
+                )
+            except RuntimeError as exc:
+                failures += 1
+                print(f"::warning::Could not dismiss a previous automated review. {exc}")
+    if failures:
+        return ["GitHub left an older bot verdict in place. Please check the current commit before merging."]
+    return []
 
 
 def review(path, head):
@@ -208,7 +246,8 @@ def review(path, head):
     if not pr:
         return
     _, base = revision(pr)
-    if already_reviewed(path, review_marker(head, base)):
+    marker = review_marker(head, base)
+    if any((entry.get("body") or "").startswith(marker) for entry in automated_reviews(path)):
         print("This revision already has an automated review.")
         return
     patches, locations, partial = collect_diff(pages(f"{path}/files"))
@@ -233,7 +272,10 @@ def publish(path):
     result = json.loads(os.environ["REVIEW_RESULT"])
     head, base = result["head"], result["base"]
     marker = review_marker(head, base)
-    if not current_pr(path, head, base) or already_reviewed(path, marker):
+    if not current_pr(path, head, base):
+        return
+    reviews = list(automated_reviews(path))
+    if any((entry.get("body") or "").startswith(marker) for entry in reviews):
         return
     lines = [
         f"Automated PR review with `{MODEL}` (reasoning effort: `{EFFORT}`).",
@@ -250,16 +292,34 @@ def publish(path):
         lines.append("Please address the inline findings and rerun the relevant checks before merging.")
     elif result["reviewed"] and not (result["skipped"] or result["partial"] or result["unposted"]):
         event = "APPROVE"
-        lines.append("No actionable issues found in the full PR diff. This review did not run the code or tests.")
+        lines.append(
+            "No actionable issues found in the full PR diff. This approval covers the diff. "
+            "Please verify the latest commit and test results before merging."
+        )
     else:
         event = "COMMENT"
         lines.append("The available evidence is insufficient for automated approval. Please review manually.")
-    github(f"{path}/reviews", {
+    if event == "COMMENT":
+        lines.extend(dismiss_outdated_verdicts(path, reviews, marker))
+    review_payload = {
         "commit_id": head,
         "event": event,
         "body": f"{marker}\n" + "\n\n".join(lines),
         "comments": result["comments"],
-    })
+    }
+    try:
+        github(f"{path}/reviews", review_payload)
+    except GitHubVerdictDenied as exc:
+        # Leave useful feedback and let a retry publish a formal verdict after approval is enabled.
+        fallback = f"<!-- d100-gpt-pr-verdict-blocked:{head}:{base} -->"
+        if not any((entry.get("body") or "").startswith(fallback) for entry in reviews):
+            lines.extend(dismiss_outdated_verdicts(path, reviews, marker))
+            github(f"{path}/reviews", {
+                **review_payload,
+                "event": "COMMENT",
+                "body": f"{fallback}\n" + "\n\n".join([*lines, str(exc)]),
+            })
+        raise
 
 
 if __name__ == "__main__":
