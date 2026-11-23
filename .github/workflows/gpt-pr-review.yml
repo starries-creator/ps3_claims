@@ -1,0 +1,54 @@
+name: GPT-6.2 Sol PR review
+
+on:
+  # The workflow and script must come from main. PR code is never checked out.
+  pull_request_target:
+    branches: [main]
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions: {}
+
+concurrency:
+  group: gpt-pr-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      result: ${{ steps.review.outputs.result }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Review the pull request diff
+        id: review
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: python3 .github/scripts/gpt_pr_review.py review
+
+  publish:
+    if: ${{ needs.review.outputs.result != '' }}
+    needs: review
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Post GitHub review
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          REVIEW_RESULT: ${{ needs.review.outputs.result }}
+        run: python3 .github/scripts/gpt_pr_review.py publish
