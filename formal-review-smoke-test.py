@@ -1,3 +1,3 @@
 def add(left: int, right: int) -> int:
     """Return the sum of two integers."""
-    return left / 0
+    return left + right
