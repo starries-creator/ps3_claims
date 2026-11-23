@@ -213,6 +213,10 @@ def automated_reviews(path):
             yield entry
 
 
+def dismiss_verdict(path, review_id, message):
+    github(f"{path}/reviews/{review_id}/dismissals", {"message": message}, method="PUT")
+
+
 def dismiss_outdated_verdicts(path, reviews, marker):
     """Prevent a previous bot vote from being mistaken for an incomplete review."""
     failures = 0
@@ -224,11 +228,7 @@ def dismiss_outdated_verdicts(path, reviews, marker):
             and marker not in body
         ):
             try:
-                github(
-                    f"{path}/reviews/{entry['id']}/dismissals",
-                    {"message": "A newer revision could not receive a formal automated verdict."},
-                    method="PUT",
-                )
+                dismiss_verdict(path, entry["id"], "A newer revision could not receive a formal automated verdict.")
             except RuntimeError as exc:
                 failures += 1
                 print(f"::warning::Could not dismiss a previous automated review. {exc}")
@@ -277,7 +277,8 @@ def publish(path):
     reviews = list(automated_reviews(path))
     if any((entry.get("body") or "").startswith(marker) for entry in reviews):
         return
-    if not current_pr(path, head, base):
+    pr = current_pr(path, head, base)
+    if not pr:
         return
     lines = [
         f"Automated PR review with `{MODEL}` (reasoning effort: `{EFFORT}`).",
@@ -295,12 +296,15 @@ def publish(path):
     elif result["reviewed"] and not (result["skipped"] or result["partial"] or result["unposted"]):
         event = "APPROVE"
         lines.append(
-            "No actionable issues found in the full PR diff. This approval covers the diff. "
+            "No actionable issues found in the full PR diff. "
             "Please verify the latest commit and test results before merging."
         )
     else:
         event = "COMMENT"
         lines.append("The available evidence is insufficient for automated approval. Please review manually.")
+    if event != "COMMENT" and (pr.get("user") or {}).get("login") == "github-actions[bot]":
+        event = "COMMENT"
+        lines.append("Please have another reviewer check this bot-authored pull request.")
     if event == "COMMENT":
         lines.extend(dismiss_outdated_verdicts(path, reviews, marker))
     review_payload = {
@@ -310,7 +314,7 @@ def publish(path):
         "comments": result["comments"],
     }
     try:
-        github(f"{path}/reviews", review_payload)
+        created = github(f"{path}/reviews", review_payload)
     except GitHubVerdictDenied as exc:
         # Leave useful feedback and let a retry publish a formal verdict after approval is enabled.
         if not current_pr(path, head, base):
@@ -324,6 +328,8 @@ def publish(path):
                 "body": f"{fallback}\n" + "\n\n".join([*lines, str(exc)]),
             })
         raise
+    if event != "COMMENT" and revision(github(path)) != (head, base):
+        dismiss_verdict(path, created["id"], "The pull request changed while this automated verdict was being posted.")
 
 
 if __name__ == "__main__":
