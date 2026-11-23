@@ -72,6 +72,8 @@ The original division of work is recorded in the [team assignments](TEAM_ASSIGNM
 
 ## PS4 — Exercise 1: monotonicity constraints (Member E)
 
+See the [PS4 environment and data setup](PS4_SETUP.md) for Conda setup, the shared data cache, and validation commands.
+
 PS4 continues in this repository. The Ex1 implementation is in [`analyses/lgbm_monotonicity.py`](analyses/lgbm_monotonicity.py); it uses the PS3 fixed `IDpol` split, `ClaimAmountCut / Exposure` target, Exposure weights and Tweedie power 1.5. Three-fold shuffled KFold model selection is confined to the training sample. Each fold fits its own one-hot preprocessing, then the implementation resolves `BonusMalus` from the transformed feature names and applies the increasing constraint `+1` to that column. All remaining transformed columns receive constraint `0`.
 
 Run after the PS3 Conda environment is installed. By default this loads the instructor's data and creates the fixed split:

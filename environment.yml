@@ -11,8 +11,9 @@ dependencies:
   - pytest-cov
   - setuptools-scm
   # data
-  - pandas
+  - pandas<3  # DALEX 1.8.0 requires pandas 1.x or 2.x.
   - numpy
+  - pyarrow
   - dask-ml
   - ydata-profiling
   # interactive
@@ -23,3 +24,6 @@ dependencies:
   - glum
   - lightgbm
   - scikit-learn
+  # PS4 model interpretation
+  - pip:
+      - dalex==1.8.0
