@@ -277,6 +277,8 @@ def publish(path):
     reviews = list(automated_reviews(path))
     if any((entry.get("body") or "").startswith(marker) for entry in reviews):
         return
+    if not current_pr(path, head, base):
+        return
     lines = [
         f"Automated PR review with `{MODEL}` (reasoning effort: `{EFFORT}`).",
         f"Reviewed diffs for {result['reviewed']} file(s).",
@@ -311,9 +313,11 @@ def publish(path):
         github(f"{path}/reviews", review_payload)
     except GitHubVerdictDenied as exc:
         # Leave useful feedback and let a retry publish a formal verdict after approval is enabled.
+        if not current_pr(path, head, base):
+            return
         fallback = f"<!-- d100-gpt-pr-verdict-blocked:{head}:{base} -->"
+        lines.extend(dismiss_outdated_verdicts(path, reviews, marker))
         if not any((entry.get("body") or "").startswith(fallback) for entry in reviews):
-            lines.extend(dismiss_outdated_verdicts(path, reviews, marker))
             github(f"{path}/reviews", {
                 **review_payload,
                 "event": "COMMENT",
