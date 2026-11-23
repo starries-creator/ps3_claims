@@ -16,6 +16,7 @@ FINDING_LIMIT = 8
 HISTORY_LIMIT = 50
 VERDICT_PREFIX = "<!-- d100-gpt-pr-verdict:"
 BLOCKED_PREFIX = "<!-- d100-gpt-pr-verdict-blocked:"
+ACTIVE_BLOCKERS = re.compile(r"^<!-- d100-active-blockers:([\d,]*) -->$", re.MULTILINE)
 HUNK = re.compile(r"^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@")
 INSTRUCTIONS = """
 Review this D100 claims-modelling pull request for blocking defects introduced
@@ -184,16 +185,29 @@ def get_findings(patches, earlier, key):
 
 def known_findings(path, reviews, aliases):
     """Gather earlier inline findings authored by this Action for relevant files."""
-    review_ids = {
-        entry["id"] for entry in reviews
+    own = [
+        entry for entry in reviews
         if (entry.get("body") or "").startswith((VERDICT_PREFIX, BLOCKED_PREFIX))
-    }
-    if not review_ids:
+    ]
+    if not own:
         return {}
+    review_ids = {entry["id"] for entry in own}
+    checkpoint = 0
+    retained_ids = set()
+    for entry in sorted(own, key=lambda review: review["id"], reverse=True):
+        if entry["state"] not in ("APPROVED", "CHANGES_REQUESTED"):
+            continue
+        active = ACTIVE_BLOCKERS.search(entry.get("body") or "")
+        if active or entry["state"] == "APPROVED":
+            checkpoint = entry["id"]
+            if active and active[1]:
+                retained_ids = {int(comment_id) for comment_id in active[1].split(",")}
+            break
     changed_paths = set().union(*aliases.values())
     comments = [
         comment for comment in pages(f"{path}/comments")
         if comment["pull_request_review_id"] in review_ids
+        and (comment["pull_request_review_id"] >= checkpoint or comment["id"] in retained_ids)
         and (comment.get("user") or {}).get("login") == "github-actions[bot]"
         and comment["path"] in changed_paths
         and not comment.get("in_reply_to_id")
@@ -213,7 +227,7 @@ def known_findings(path, reviews, aliases):
 
 
 def review_comments(findings, locations, earlier, aliases):
-    comments = []
+    comments = {}
     repeated = set()
     unposted = 0
     seen = set()
@@ -227,9 +241,9 @@ def review_comments(findings, locations, earlier, aliases):
         if not body or (side, line) not in locations.get(path, ()):
             unposted += 1
             continue
-        if key in seen:
+        if (key, body) in seen:
             continue
-        seen.add(key)
+        seen.add((key, body))
         prior = earlier.get(item["previous_comment_id"])
         if not prior or prior["path"] not in aliases[path]:
             # Exact repeats on the same mapped line also deduplicate without a model ID.
@@ -240,11 +254,13 @@ def review_comments(findings, locations, earlier, aliases):
             )), None)
         if prior:
             repeated.add(prior["id"])
+        elif key in comments:
+            comments[key]["body"] += f"\n\n{body}"
         elif len(comments) < FINDING_LIMIT:
-            comments.append({"path": path, "line": line, "side": side, "body": body})
+            comments[key] = {"path": path, "line": line, "side": side, "body": body}
         else:
             unposted += 1
-    return comments, sorted(repeated), unposted
+    return list(comments.values()), sorted(repeated), unposted
 
 
 def revision(pr):
@@ -374,10 +390,14 @@ def publish(path):
         lines.append("Please have another reviewer check this bot-authored pull request.")
     if event == "COMMENT":
         lines.extend(dismiss_outdated_verdicts(path, reviews, marker))
+    markers = [marker]
+    if event != "COMMENT" and not (result["skipped"] or result["partial"] or result["unposted"]):
+        ids = ",".join(map(str, result["repeated"]))
+        markers.append(f"<!-- d100-active-blockers:{ids} -->")
     review_payload = {
         "commit_id": head,
         "event": event,
-        "body": f"{marker}\n" + "\n\n".join(lines),
+        "body": "\n".join(markers) + "\n" + "\n\n".join(lines),
         "comments": result["comments"],
     }
     try:
