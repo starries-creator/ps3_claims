@@ -29,6 +29,21 @@ python -m analyses.ps3_script ps4-ex1 --data data/ps4_claims.parquet --results-d
 
 Use the selected parameters and transformed feature order in `data/ps4_ex1/ps4_ex1_monotonicity_metrics.json`. Join `data/ps4_ex1/ps4_ex1_test_predictions.csv` by `IDpol` for paired evaluation. For model explanations, use the fitted preprocessing for each model and use the same background sample when comparing models.
 
+For Exercise 4, obtain both fitted pipelines in the same Python process.
+
+```python
+import pandas as pd
+
+from analyses.lgbm_monotonicity import run_monotonicity_comparison
+
+claims = pd.read_parquet("data/ps4_claims.parquet")
+models, _, _, _ = run_monotonicity_comparison(claims, "data/ps4_ex1")
+constrained_lgbm = models["constrained_lgbm"]
+unconstrained_lgbm = models["unconstrained_lgbm"]
+```
+
+Pass the same raw feature columns to both pipelines. Each pipeline applies its fitted preprocessing before predicting.
+
 ## PS4 pull request checks
 
 For the four teammates who work on a single exercise, the

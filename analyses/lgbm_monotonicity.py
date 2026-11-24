@@ -227,7 +227,20 @@ def run_monotonicity_analysis(
     df: pd.DataFrame,
     results_dir: str | Path = "results",
 ) -> tuple[Pipeline, dict, dict, pd.Series]:
-    """Tune constrained/unconstrained candidates on train folds and compare."""
+    """Run Ex1 and return the fitted constrained pipeline and its reports."""
+    models, cv, handoff, predictions = run_monotonicity_comparison(df, results_dir)
+    return models["constrained_lgbm"], cv, handoff, predictions
+
+
+def run_monotonicity_comparison(
+    df: pd.DataFrame,
+    results_dir: str | Path = "results",
+) -> tuple[dict[str, Pipeline], dict, dict, pd.Series]:
+    """Run Ex1 and return both fitted pipelines, reports and constrained predictions.
+
+    The pipeline keys are ``constrained_lgbm`` and ``unconstrained_lgbm``.
+    Both pipelines include their fitted preprocessing.
+    """
     data, split = _prepare(df)
     train = data["sample"].eq("train")
     test = data["sample"].eq("test")
@@ -292,7 +305,7 @@ def run_monotonicity_analysis(
                 "pp_t_lgbm_constrained" if constrained else "pp_t_lgbm_unconstrained"
             ),
         }
-        final_models[name] = model
+        final_models[f"{name}_lgbm"] = model
         if constrained:
             final_feature_names, final_constraints = feature_names, constraints
 
@@ -357,7 +370,7 @@ def run_monotonicity_analysis(
                 "pp_t_lgbm_constrained",
                 "pp_t_lgbm_unconstrained",
             ],
-            "model_artifacts": "Pipelines are returned by run_monotonicity_analysis and can be regenerated locally; fitted model files are not committed.",
+            "model_artifacts": "run_monotonicity_comparison returns the fitted constrained_lgbm and unconstrained_lgbm pipelines in memory.",
         },
         "overfit_check": "Compare each model's selected CV mean deviance with its train and held-out test deviance; the fixed test set was not used for model selection.",
     }
@@ -365,16 +378,15 @@ def run_monotonicity_analysis(
         json.dumps(handoff, indent=2, allow_nan=False) + "\n", encoding="utf-8"
     )
     prediction_frame = data.loc[test, ["IDpol"]].copy()
-    prediction_frame["pp_t_lgbm_constrained"] = _predict(
-        final_models["constrained"], X_test
-    )
-    prediction_frame["pp_t_lgbm_unconstrained"] = _predict(
-        final_models["unconstrained"], X_test
-    )
+    constrained_lgbm = final_models["constrained_lgbm"]
+    unconstrained_lgbm = final_models["unconstrained_lgbm"]
+    prediction_frame["pp_t_lgbm_constrained"] = _predict(constrained_lgbm, X_test)
+    prediction_frame["pp_t_lgbm_unconstrained"] = _predict(unconstrained_lgbm, X_test)
     prediction_path = output_dir / "ps4_ex1_test_predictions.csv"
     prediction_frame.to_csv(prediction_path, index=False)
     plot_bonusmalus_experience(data, output_dir / "bonusmalus_weighted_claims.png")
-    return final_models["constrained"], cv_payload, handoff, prediction_frame.set_index("IDpol")["pp_t_lgbm_constrained"]
+    constrained_predictions = prediction_frame.set_index("IDpol")["pp_t_lgbm_constrained"]
+    return final_models, cv_payload, handoff, constrained_predictions
 
 
 def main() -> None:

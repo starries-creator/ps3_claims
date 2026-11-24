@@ -1344,7 +1344,7 @@
       "pp_t_lgbm_constrained",
       "pp_t_lgbm_unconstrained"
     ],
-    "model_artifacts": "Pipelines are returned by run_monotonicity_analysis and can be regenerated locally; fitted model files are not committed."
+    "model_artifacts": "run_monotonicity_comparison returns the fitted constrained_lgbm and unconstrained_lgbm pipelines in memory."
   },
   "overfit_check": "Compare each model's selected CV mean deviance with its train and held-out test deviance; the fixed test set was not used for model selection."
 }
