@@ -14,16 +14,17 @@ EFFORT = "high"
 DIFF_LIMIT = 100_000
 FINDING_LIMIT = 8
 HISTORY_LIMIT = 50
-VERDICT_PREFIX = "<!-- d100-gpt-pr-verdict:"
-BLOCKED_PREFIX = "<!-- d100-gpt-pr-verdict-blocked:"
-ACTIVE_BLOCKERS = re.compile(r"^<!-- d100-active-blockers:([\d,]*) -->$", re.MULTILINE)
+VERDICT_PREFIX = "<!-- gpt-pr-verdict:"
+BLOCKED_PREFIX = "<!-- gpt-pr-verdict-blocked:"
+# Recognize reviews already posted before the workflow was made project-independent.
+VERDICT_PREFIXES = (VERDICT_PREFIX, "<!-- d100-gpt-pr-verdict:")
+BLOCKED_PREFIXES = (BLOCKED_PREFIX, "<!-- d100-gpt-pr-verdict-blocked:")
+ACTIVE_BLOCKERS = re.compile(r"^<!-- (?:d100-)?active-blockers:([\d,]*) -->$", re.MULTILINE)
 HUNK = re.compile(r"^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@")
 INSTRUCTIONS = """
-Review this D100 claims-modelling pull request for blocking defects introduced
-by the diff. A blocker causes a concrete, material failure on a supported path,
-such as a crash, wrong results, data leakage, or broken reproduction of the
-assignment. Where relevant, check the fixed IDpol split, ClaimAmountCut / Exposure
-target, Exposure weighting, shared caches, and reported results. Skip style,
+Review this pull request for blocking defects introduced by the diff. A blocker
+causes a concrete, material failure on a supported path, such as a crash, wrong
+results, data leakage, or a regression in a documented workflow. Skip style,
 wording, optional improvements, and speculative edge cases. Omit minor findings.
 
 Compare earlier findings against the current diff. Report an earlier blocker only
@@ -72,7 +73,7 @@ def request_json(service, url, token, payload=None, *, method=None):
         "Authorization": f"Bearer {token}",
         "Accept": "application/json",
         "Content-Type": "application/json",
-        "User-Agent": "d100-gpt-pr-review",
+        "User-Agent": "gpt-pr-review",
     }
     if service == "GitHub":
         headers["Accept"] = "application/vnd.github+json"
@@ -187,7 +188,7 @@ def known_findings(path, reviews, aliases):
     """Gather earlier inline findings authored by this Action for relevant files."""
     own = [
         entry for entry in reviews
-        if (entry.get("body") or "").startswith((VERDICT_PREFIX, BLOCKED_PREFIX))
+        if (entry.get("body") or "").startswith(VERDICT_PREFIXES + BLOCKED_PREFIXES)
     ]
     if not own:
         return {}
@@ -280,6 +281,11 @@ def review_marker(head, base):
     return f"{VERDICT_PREFIX}{head}:{base} -->"
 
 
+def verdict_matches(entry, head, base, prefixes=VERDICT_PREFIXES):
+    markers = tuple(f"{prefix}{head}:{base} -->" for prefix in prefixes)
+    return (entry.get("body") or "").startswith(markers)
+
+
 def automated_reviews(path):
     for entry in pages(f"{path}/reviews"):
         if (entry.get("user") or {}).get("login") == "github-actions[bot]":
@@ -290,15 +296,15 @@ def dismiss_verdict(path, review_id, message):
     github(f"{path}/reviews/{review_id}/dismissals", {"message": message}, method="PUT")
 
 
-def dismiss_outdated_verdicts(path, reviews, marker):
+def dismiss_outdated_verdicts(path, reviews, head, base):
     """Prevent a previous bot vote from being mistaken for an incomplete review."""
     failures = 0
     for entry in reviews:
         body = entry.get("body") or ""
         if (
             entry["state"] in ("APPROVED", "CHANGES_REQUESTED")
-            and body.startswith(VERDICT_PREFIX)
-            and marker not in body
+            and body.startswith(VERDICT_PREFIXES)
+            and not verdict_matches(entry, head, base)
         ):
             try:
                 dismiss_verdict(path, entry["id"], "A newer revision could not receive a formal automated verdict.")
@@ -319,9 +325,8 @@ def review(path, head):
     if not pr:
         return
     _, base = revision(pr)
-    marker = review_marker(head, base)
     reviews = list(automated_reviews(path))
-    if any((entry.get("body") or "").startswith(marker) for entry in reviews):
+    if any(verdict_matches(entry, head, base) for entry in reviews):
         print("This revision already has an automated review.")
         return
     patches, locations, partial = collect_diff(pages(f"{path}/files"))
@@ -345,6 +350,36 @@ def review(path, head):
         output.write(f"result={json.dumps(result, ensure_ascii=True)}\n")
 
 
+def replay(path):
+    """Run the same reviewer over a merged PR and report in the Actions summary."""
+    pr = github(path)
+    if not pr["merged"]:
+        raise RuntimeError("The replay command requires a merged pull request.")
+    files = list(pages(f"{path}/files"))
+    added_assets = [
+        file for file in files if file["status"] == "added" and not file.get("patch") and not file["changes"]
+    ]
+    text_files = [file for file in files if file not in added_assets]
+    patches, locations, partial = collect_diff(text_files)
+    findings = get_findings(patches, {}, os.environ["OPENAI_API_KEY"]) if patches else []
+    aliases = {patch["path"]: {patch["path"]} for patch in patches}
+    comments, _, unposted = review_comments(findings, locations, {}, aliases)
+    missing = len(text_files) - len(patches) + pr["changed_files"] - len(files)
+    passed = bool(patches) and not (comments or partial or missing or unposted)
+    outcome = "Passed" if passed else "Needs review"
+    lines = [
+        f"## Archived code diff review · {outcome}",
+        f"[PR #{pr['number']}]({pr['html_url']}) · `{pr['head']['sha']}` · `{MODEL}` / `{EFFORT}`",
+        f"Reviewed {len(patches)} text diffs. {len(added_assets)} new non-text assets are outside the text review.",
+        f"Unavailable or incomplete diffs: {missing + partial}. Blocking findings: {len(comments) + unposted}.",
+    ]
+    lines.extend(f"- {html.escape(item['path'])}:{item['line']} — {item['body']}" for item in comments)
+    with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as summary:
+        summary.write("\n\n".join(lines) + "\n")
+    if not passed:
+        raise SystemExit("Archived code review found blockers or incomplete evidence.")
+
+
 def publish(path):
     result = json.loads(os.environ["REVIEW_RESULT"])
     head, base = result["head"], result["base"]
@@ -352,7 +387,7 @@ def publish(path):
     if not current_pr(path, head, base):
         return
     reviews = list(automated_reviews(path))
-    if any((entry.get("body") or "").startswith(marker) for entry in reviews):
+    if any(verdict_matches(entry, head, base) for entry in reviews):
         return
     pr = current_pr(path, head, base)
     if not pr:
@@ -389,11 +424,11 @@ def publish(path):
         event = "COMMENT"
         lines.append("Please have another reviewer check this bot-authored pull request.")
     if event == "COMMENT":
-        lines.extend(dismiss_outdated_verdicts(path, reviews, marker))
+        lines.extend(dismiss_outdated_verdicts(path, reviews, head, base))
     markers = [marker]
     if event != "COMMENT" and not (result["skipped"] or result["partial"] or result["unposted"]):
         ids = ",".join(map(str, result["repeated"]))
-        markers.append(f"<!-- d100-active-blockers:{ids} -->")
+        markers.append(f"<!-- active-blockers:{ids} -->")
     review_payload = {
         "commit_id": head,
         "event": event,
@@ -407,8 +442,8 @@ def publish(path):
         if not current_pr(path, head, base):
             return
         fallback = f"{BLOCKED_PREFIX}{head}:{base} -->"
-        lines.extend(dismiss_outdated_verdicts(path, reviews, marker))
-        if not any((entry.get("body") or "").startswith(fallback) for entry in reviews):
+        lines.extend(dismiss_outdated_verdicts(path, reviews, head, base))
+        if not any(verdict_matches(entry, head, base, BLOCKED_PREFIXES) for entry in reviews):
             github(f"{path}/reviews", {
                 **review_payload,
                 "event": "COMMENT",
@@ -421,8 +456,12 @@ def publish(path):
 
 if __name__ == "__main__":
     event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text(encoding="utf-8"))
-    pr_path = f"/pulls/{event['number']}"
-    if sys.argv[1] == "review":
+    command = sys.argv[1]
+    pr_number = event["issue"]["number"] if command == "replay" else event["number"]
+    pr_path = f"/pulls/{pr_number}"
+    if command == "replay":
+        replay(pr_path)
+    elif command == "review":
         review(pr_path, event["pull_request"]["head"]["sha"])
     else:
         publish(pr_path)
