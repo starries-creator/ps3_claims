@@ -1,0 +1,118 @@
+name: PS4 assignment acceptance
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize, ready_for_review, edited]
+  # The rubric job reads GitHub data and never checks out or executes PR code.
+  pull_request_target:
+    branches: [main]
+    types: [opened, reopened, synchronize, ready_for_review, edited]
+  issue_comment:
+    types: [created]
+
+permissions: {}
+
+concurrency:
+  group: ps4-acceptance-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: PS4 executable checks
+    if: >-
+      (github.event_name == 'pull_request' && !github.event.pull_request.draft)
+      || (github.event_name == 'issue_comment' && github.event.issue.pull_request
+      && github.event.issue.state == 'closed' && github.event.comment.author_association == 'OWNER'
+      && github.event.comment.body == '/recheck merged-pr')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: read
+    env:
+      MPLBACKEND: Agg
+      OMP_NUM_THREADS: '2'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          path: criteria
+          persist-credentials: false
+      - name: Check out the proposed merge
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.sha }}
+          path: submission
+          persist-credentials: false
+      - name: Select exercise and revision
+        id: scope
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          if [[ -f criteria/.github/scripts/ps4_acceptance.py ]]; then
+            python3 criteria/.github/scripts/ps4_acceptance.py select
+            echo 'checks=criteria' >> "$GITHUB_OUTPUT"
+          else
+            # The PR introducing these checks validates its own proposed rubric and Ex1 harness.
+            test "$GITHUB_EVENT_NAME" = pull_request
+            python3 submission/.github/scripts/ps4_acceptance.py validate
+            echo 'exercises=1' >> "$GITHUB_OUTPUT"
+            echo 'checks=submission' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Check out the recorded merge commit
+        if: github.event_name == 'issue_comment' && steps.scope.outputs.exercises != ''
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ steps.scope.outputs.revision }}
+          path: submission
+          persist-credentials: false
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        if: steps.scope.outputs.exercises != ''
+        with:
+          python-version: '3.12'
+      - name: Install test dependencies
+        if: steps.scope.outputs.exercises != ''
+        run: python -m pip install 'pandas<3' numpy pyarrow glum lightgbm scikit-learn matplotlib pytest pytest-cov 'dalex==1.8.0'
+      - name: Run repository and selected exercise tests
+        if: steps.scope.outputs.exercises != ''
+        working-directory: submission
+        env:
+          EXERCISES: ${{ steps.scope.outputs.exercises }}
+          CHECKS: ${{ steps.scope.outputs.checks }}
+        run: |
+          tests=(tests)
+          if [[ " $EXERCISES " == *' 1 '* ]]; then
+            tests+=("$GITHUB_WORKSPACE/$CHECKS/.github/ps4/check_ex1.py")
+          fi
+          revision=$(git rev-parse HEAD)
+          printf '## PS4 executable checks\n\nExercise(s) %s at `%s`.\n\n' "$EXERCISES" "$revision" >> "$GITHUB_STEP_SUMMARY"
+          if [[ " $EXERCISES " == *' 1 '* ]]; then
+            echo 'Ex1 uses a fixed synthetic policy fixture and fits both LightGBM variants.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+          python -m pytest -q "${tests[@]}"
+          echo 'Repository and selected exercise tests passed.' >> "$GITHUB_STEP_SUMMARY"
+
+  rubric:
+    name: PS4 rubric review
+    if: >-
+      (github.event_name == 'pull_request_target' && !github.event.pull_request.draft)
+      || (github.event_name == 'issue_comment' && github.event.issue.pull_request
+      && github.event.issue.state == 'closed' && github.event.comment.author_association == 'OWNER'
+      && github.event.comment.body == '/recheck merged-pr')
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Check the submitted evidence against the PS4 rubric
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: python3 .github/scripts/ps4_acceptance.py assess
