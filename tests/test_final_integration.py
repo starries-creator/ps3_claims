@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from analyses import part_c
+from analyses import lgbm_monotonicity, part_c
 from analyses.model_comparison import save_comparison, write_metrics_csv
 from analyses.ps3_script import load_model_data
 from analyses import ps3_script
@@ -51,16 +51,20 @@ def test_report_rejects_mixed_dataset_fingerprints(tmp_path):
         write_metrics_csv(tmp_path)
 
 
-def test_e_adapter_runs_original_cv_and_shared_scoring(tmp_path):
+@pytest.fixture
+def synthetic_claims():
     rng = np.random.default_rng(12)
     n = 180
-    frame = pd.DataFrame({
+    return pd.DataFrame({
         **{c: rng.choice(["a", "b"], n) for c in part_c.CATEGORICALS},
         "IDpol": np.arange(n), "BonusMalus": rng.uniform(50, 100, n),
         "Density": rng.uniform(1, 200, n), "Exposure": rng.uniform(.1, 1, n),
         "ClaimAmountCut": rng.uniform(0, 10, n),
     })
-    frame = load_model_data(frame)
+
+
+def test_e_adapter_runs_original_cv_and_shared_scoring(tmp_path, synthetic_claims):
+    frame = load_model_data(synthetic_claims)
     metrics, predictions = part_c.run_tuned_lightgbm(frame, tmp_path)
     train, test = part_c.sample_frames(frame)
     cv = json.loads((tmp_path / "lgbm_tuning_cv.json").read_text())
@@ -69,6 +73,26 @@ def test_e_adapter_runs_original_cv_and_shared_scoring(tmp_path):
     assert predictions.index.equals(test.index)
     assert metrics["split_fingerprint"] == part_c.split_fingerprint(train, test)
     assert metrics["test_deviance"] == pytest.approx(part_c.evaluate_sample(test, predictions)["deviance"])
+
+
+def test_ex1_handoff_returns_both_fitted_pipelines(tmp_path, synthetic_claims, monkeypatch):
+    monkeypatch.setattr(
+        lgbm_monotonicity, "PARAMETER_GRID", [{"n_estimators": 8, "learning_rate": 0.05}]
+    )
+    models, _, _, constrained_predictions = lgbm_monotonicity.run_monotonicity_comparison(
+        synthetic_claims, tmp_path
+    )
+    _, test = part_c.sample_frames(load_model_data(synthetic_claims))
+    saved = pd.read_csv(tmp_path / "ps4_ex1_test_predictions.csv").set_index("IDpol")
+
+    assert set(models) == {"constrained_lgbm", "unconstrained_lgbm"}
+    assert "monotone_constraints" not in models["unconstrained_lgbm"].named_steps["model"].get_params()
+    pd.testing.assert_index_equal(saved.index, test.index)
+    pd.testing.assert_series_equal(constrained_predictions, saved["pp_t_lgbm_constrained"])
+    features = test[lgbm_monotonicity.FEATURES]
+    for variant in ("constrained", "unconstrained"):
+        pipeline = models[f"{variant}_lgbm"]
+        np.testing.assert_allclose(pipeline.predict(features), saved[f"pp_t_lgbm_{variant}"])
 
 
 def test_offline_summary_preserves_prediction_verified_gini(tmp_path):
