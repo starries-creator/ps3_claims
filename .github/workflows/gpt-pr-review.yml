@@ -5,16 +5,18 @@ on:
   pull_request_target:
     branches: [main]
     types: [opened, reopened, synchronize, ready_for_review]
+  issue_comment:
+    types: [created]
 
 permissions: {}
 
 concurrency:
-  group: gpt-pr-review-${{ github.event.pull_request.number }}
+  group: gpt-pr-review-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
 jobs:
   review:
-    if: ${{ !github.event.pull_request.draft }}
+    if: ${{ github.event_name == 'pull_request_target' && !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     timeout-minutes: 12
     permissions:
@@ -52,3 +54,24 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           REVIEW_RESULT: ${{ needs.review.outputs.result }}
         run: python3 .github/scripts/gpt_pr_review.py publish
+
+  replay:
+    if: >-
+      github.event_name == 'issue_comment' && github.event.issue.pull_request
+      && github.event.issue.state == 'closed' && github.event.comment.author_association == 'OWNER'
+      && github.event.comment.body == '/recheck merged-pr'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Review the archived pull request diff
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: python3 .github/scripts/gpt_pr_review.py replay
