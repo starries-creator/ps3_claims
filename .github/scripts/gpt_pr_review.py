@@ -356,7 +356,10 @@ def replay(path):
     if not pr["merged"]:
         raise RuntimeError("The replay command requires a merged pull request.")
     files = list(pages(f"{path}/files"))
-    text_files = [file for file in files if file.get("patch") or file["changes"]]
+    added_assets = [
+        file for file in files if file["status"] == "added" and not file.get("patch") and not file["changes"]
+    ]
+    text_files = [file for file in files if file not in added_assets]
     patches, locations, partial = collect_diff(text_files)
     findings = get_findings(patches, {}, os.environ["OPENAI_API_KEY"]) if patches else []
     aliases = {patch["path"]: {patch["path"]} for patch in patches}
@@ -365,10 +368,10 @@ def replay(path):
     passed = bool(patches) and not (comments or partial or missing or unposted)
     outcome = "Passed" if passed else "Needs review"
     lines = [
-        f"## Archived code review · {outcome}",
+        f"## Archived code diff review · {outcome}",
         f"[PR #{pr['number']}]({pr['html_url']}) · `{pr['head']['sha']}` · `{MODEL}` / `{EFFORT}`",
-        f"Reviewed {len(patches)} text diffs. Excluded {len(files) - len(text_files)} files without text changes.",
-        f"Incomplete text diffs: {missing + partial}. Blocking findings: {len(comments) + unposted}.",
+        f"Reviewed {len(patches)} text diffs. {len(added_assets)} new non-text assets are outside the text review.",
+        f"Unavailable or incomplete diffs: {missing + partial}. Blocking findings: {len(comments) + unposted}.",
     ]
     lines.extend(f"- {html.escape(item['path'])}:{item['line']} — {item['body']}" for item in comments)
     with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as summary:
