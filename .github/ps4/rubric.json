@@ -1,0 +1,67 @@
+{
+  "assignment": "PS4 · Model evaluation and interpretability",
+  "source": "https://languid-citipati-d0d.notion.site/PS-4-Model-evaluation-interpretability-2b632dea82c180fa939fdb4d836fe71d",
+  "shared_evidence_paths": ["analyses/ps3_script.py", "README.md"],
+  "shared": [
+    {"id": "PS4-S1", "requirement": "Continue in the PS3 repository and clearly mark where PS4 starts in analyses/ps3_script.py. Provide a reproducible entry point for the submitted exercise."},
+    {"id": "PS4-S2", "requirement": "Use the team's fixed IDpol split, ClaimAmountCut / Exposure target, and Exposure weights wherever applicable. Use Tweedie power 1.5 for the team's deviance comparisons."}
+  ],
+  "exercises": {
+    "1": {
+      "title": "Monotonicity constraints",
+      "source": "https://languid-citipati-d0d.notion.site/Ex-1-Monotonicity-constraints-2b632dea82c1818a9ce8cc28dc57e4c5",
+      "prior_reviews": [
+        "https://github.com/starries-creator/ps3_claims/pull/16",
+        "https://github.com/starries-creator/ps3_claims/pull/16#discussion_r4672115288",
+        "https://github.com/starries-creator/ps3_claims/pull/16#discussion_r4672124280"
+      ],
+      "evidence_paths": ["analyses/lgbm_monotonicity.py", "analyses/ps3_script.py", "README.md"],
+      "requirements": [
+        {"id": "PS4-1a", "requirement": "Plot average claims by BonusMalus group using Exposure weights and explain what can happen without an explicit constraint."},
+        {"id": "PS4-1b", "requirement": "Name the new pipeline or estimator constrained_lgbm. After preprocessing, use a constraint vector matching the actual feature order, with +1 for BonusMalus and 0 elsewhere."},
+        {"id": "PS4-1c", "requirement": "Cross-validate on training folds, select the best constrained estimator, and predict using that estimator. The held-out test sample must not affect parameter selection."},
+        {"id": "PS4-1d", "requirement": "Compare prediction accuracy with the unconstrained LGBM on a common split and criterion; interpret the comparison consistently with the evidence."},
+        {"id": "PS4-1e", "requirement": "Generate held-out predictions as pp_t_lgbm_constrained and align them by IDpol for downstream exercises."}
+      ]
+    },
+    "2": {
+      "title": "Learning curve",
+      "source": "https://languid-citipati-d0d.notion.site/Ex-2-Learning-curve-2b632dea82c1818eaf55decdcb83b350",
+      "evidence_paths": ["analyses/ps3_script.py", "README.md"],
+      "requirements": [
+        {"id": "PS4-2a", "requirement": "Refit the constrained LightGBM with the best cross-validated parameters from Ex1, keeping the BonusMalus constraint."},
+        {"id": "PS4-2b", "requirement": "Pass both training and test datasets through eval_set, using the fitted training preprocessing and corresponding Exposure weights. Keep the test curves out of parameter selection."},
+        {"id": "PS4-2c", "requirement": "Use lgb.plot_metric to show the training and test metric over boosting iterations and interpret convergence, overfitting and whether the chosen configuration looks well tuned."}
+      ]
+    },
+    "3": {
+      "title": "Metrics function",
+      "source": "https://languid-citipati-d0d.notion.site/Ex-3-Metrics-function-2b632dea82c1812b994fe7e49e878283",
+      "evidence_paths": ["ps3/evaluation/__init__.py", "ps3/evaluation/_evaluate_predictions.py", "README.md"],
+      "requirements": [
+        {"id": "PS4-3a", "requirement": "Define evaluate_predictions in evaluation/_evaluate_predictions.py, export it from the evaluation package, and accept actual outcomes, predictions and sample weights."},
+        {"id": "PS4-3b", "requirement": "Compute bias relative to the actual exposure-adjusted mean, weighted deviance, weighted MAE and weighted RMSE. Return a DataFrame indexed by metric name."},
+        {"id": "PS4-3c", "requirement": "Use the function to compare constrained and unconstrained LightGBM on matched policies and weights. Gini is optional and follows the PS3 Lorenz definition if included."}
+      ]
+    },
+    "4": {
+      "title": "Evaluation plots",
+      "source": "https://languid-citipati-d0d.notion.site/Ex-4-Evaluation-plots-2b632dea82c181a4a48dc5db7023af04",
+      "evidence_paths": ["analyses/ps3_script.py", "README.md"],
+      "requirements": [
+        {"id": "PS4-4a", "requirement": "Use DALEX Explainer with fitted constrained and unconstrained LightGBM estimators or pipelines, and compatible model inputs."},
+        {"id": "PS4-4b", "requirement": "Compute partial dependence via DALEX model_profile for all modelling features, and plot and compare both models on comparable backgrounds and grids."}
+      ]
+    },
+    "5": {
+      "title": "Shapley decompositions",
+      "source": "https://languid-citipati-d0d.notion.site/Ex-5-Shapley-2b632dea82c18148b457e0cb69316dde",
+      "evidence_paths": ["analyses/ps3_script.py", "README.md"],
+      "requirements": [
+        {"id": "PS4-5a", "requirement": "Create DALEX explainers for the initial GLM and constrained LightGBM using comparable background data and explain the same selected test policy."},
+        {"id": "PS4-5b", "requirement": "Call predict_parts with type='shap' for both models and plot both decompositions."},
+        {"id": "PS4-5c", "requirement": "Compare how the decompositions and feature contributions differ for that policy, consistent with the reported plots and predictions."}
+      ]
+    }
+  }
+}

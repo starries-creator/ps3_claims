@@ -28,3 +28,22 @@ python -m analyses.ps3_script ps4-ex1 --data data/ps4_claims.parquet --results-d
 ```
 
 Use the selected parameters and transformed feature order in `data/ps4_ex1/ps4_ex1_monotonicity_metrics.json`. Join `data/ps4_ex1/ps4_ex1_test_predictions.csv` by `IDpol` for paired evaluation. For model explanations, use the fitted preprocessing for each model and use the same background sample when comparing models.
+
+## PS4 pull request checks
+
+Include `PS4 ExN` in the PR title or description for each exercise it submits. The
+[acceptance rubric](.github/ps4/rubric.json) links the handout, the five exercises,
+and the earlier Ex1 review. The rubric job evaluates each requirement against the
+submitted implementation and report and records `met`, `missing` or
+`needs_review` with evidence in the Actions summary.
+
+The executable job runs the repository's tests on the proposed merge. For Ex1
+it also trains both LightGBM variants on a small, deterministic synthetic dataset
+and checks weighting, feature order, monotonicity, training-only CV and paired
+test predictions. For later exercises, include exercise-specific tests under
+`tests/` with the implementation so that the executable job runs them.
+
+After a PS4 PR is merged, the repository owner can comment `/recheck merged-pr`
+on that PR. This runs the general reviewer against the original text diff and
+the assignment checks against the recorded merge commit. Results are written to
+the two Actions summaries. The merge decision remains with the maintainer.
