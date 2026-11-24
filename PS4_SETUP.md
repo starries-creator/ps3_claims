@@ -31,11 +31,12 @@ Use the selected parameters and transformed feature order in `data/ps4_ex1/ps4_e
 
 ## PS4 pull request checks
 
-Include `PS4 ExN` in the PR title or description for each exercise it submits. The
-[acceptance rubric](.github/ps4/rubric.json) links the handout, the five exercises,
-and the earlier Ex1 review. The rubric job evaluates each requirement against the
-submitted implementation and report and records `met`, `missing` or
-`needs_review` with evidence in the Actions summary.
+For the four teammates who work on a single exercise, the
+[acceptance rubric](.github/ps4/rubric.json) selects that exercise by GitHub PR
+author from PR #16 onward. The maintainer and any other author can use `PS4 ExN`
+in the PR title, description or branch name. The rubric also recognizes exercise
+paths and lists the handout, individual questions and earlier Ex1 review. It
+records `met`, `missing` or `needs_review` with evidence in the Actions summary.
 
 The executable job runs the repository's tests on the proposed merge. For Ex1
 it also trains both LightGBM variants on a small, deterministic synthetic dataset
@@ -46,4 +47,5 @@ test predictions. For later exercises, include exercise-specific tests under
 After a PS4 PR is merged, the repository owner can comment `/recheck merged-pr`
 on that PR. This runs the general reviewer against the original text diff and
 the assignment checks against the recorded merge commit. Results are written to
-the two Actions summaries. The merge decision remains with the maintainer.
+the two Actions summaries. The general review also lists archived findings in the
+job log. The merge decision remains with the maintainer.

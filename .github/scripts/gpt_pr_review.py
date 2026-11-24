@@ -374,6 +374,15 @@ def replay(path):
         f"Unavailable or incomplete diffs: {missing + partial}. Blocking findings: {len(comments) + unposted}.",
     ]
     lines.extend(f"- {html.escape(item['path'])}:{item['line']} — {item['body']}" for item in comments)
+    # The runner also recognizes legacy commands embedded within a log line.
+    report = json.dumps({
+        "outcome": outcome,
+        "reviewed_text_files": len(patches),
+        "unavailable_or_partial_diffs": missing + partial,
+        "unverifiable_findings": unposted,
+        "findings": comments,
+    }, ensure_ascii=True)
+    print("Archived review result:", report.replace("##[", r"\u0023\u0023["))
     with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as summary:
         summary.write("\n\n".join(lines) + "\n")
     if not passed:

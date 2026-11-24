@@ -21,6 +21,9 @@ STATUSES = ("met", "missing", "needs_review")
 def load_rubric():
     rubric = json.loads(RUBRIC.read_text(encoding="utf-8"))
     assert set(rubric["exercises"]) == set("12345")
+    authors = rubric["pr_author_scope"]["exercises_by_login"]
+    assert all(login == login.casefold() for login in authors)
+    assert set(authors.values()) <= rubric["exercises"].keys()
     items = rubric["shared"] + [
         item for exercise in rubric["exercises"].values() for item in exercise["requirements"]
     ]
@@ -29,7 +32,13 @@ def load_rubric():
     return rubric
 
 
-def selection(pr, paths):
+def selection(pr, paths, author_scope):
+    login = (pr.get("user") or {}).get("login", "")
+    if pr["number"] >= author_scope["first_ps4_pr"]:
+        assigned = author_scope["exercises_by_login"].get(login.casefold())
+        if assigned:
+            print(f"Selected PS4 Ex{assigned} using the GitHub PR author @{login}.")
+            return [assigned]
     metadata = "\n".join((pr["title"], pr.get("body") or "", pr["head"]["ref"]))
     exercises = set(MENTION.findall(metadata))
     if EX1_FILE in paths:
@@ -164,7 +173,7 @@ def main():
     if any(pr[side]["sha"] != current[side]["sha"] for side in ("head", "base")):
         raise RuntimeError("The PR revision changed while PS4 evidence was being collected.")
     submitted_paths = {file["filename"] for file in files}
-    exercises = selection(pr, submitted_paths)
+    exercises = selection(pr, submitted_paths, rubric["pr_author_scope"])
     ref = pr.get("merge_commit_sha") or current.get("merge_commit_sha")
     if command == "select":
         if os.environ["GITHUB_EVENT_NAME"] == "pull_request":
