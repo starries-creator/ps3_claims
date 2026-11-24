@@ -1,6 +1,7 @@
 {
   "assignment": "PS4 · Model evaluation and interpretability",
   "source": "https://languid-citipati-d0d.notion.site/PS-4-Model-evaluation-interpretability-2b632dea82c180fa939fdb4d836fe71d",
+  "shared_evidence_paths": ["analyses/ps3_script.py", "README.md"],
   "shared": [
     {"id": "PS4-S1", "requirement": "Continue in the PS3 repository and clearly mark where PS4 starts in analyses/ps3_script.py. Provide a reproducible entry point for the submitted exercise."},
     {"id": "PS4-S2", "requirement": "Use the team's fixed IDpol split, ClaimAmountCut / Exposure target, and Exposure weights wherever applicable. Use Tweedie power 1.5 for the team's deviance comparisons."}
