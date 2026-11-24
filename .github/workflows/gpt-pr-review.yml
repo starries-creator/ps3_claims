@@ -59,7 +59,7 @@ jobs:
     if: >-
       github.event_name == 'issue_comment' && github.event.issue.pull_request
       && github.event.issue.state == 'closed' && github.event.comment.author_association == 'OWNER'
-      && github.event.comment.body == '/recheck merged-pr'
+      && (github.event.comment.body == '/recheck merged-pr' || github.event.comment.body == '/recheck code-review')
     runs-on: ubuntu-latest
     timeout-minutes: 12
     permissions:
