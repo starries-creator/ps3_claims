@@ -41,4 +41,4 @@ Each evaluated JSON records source-file hashes, versions, timestamp and source c
 
 ## Model handoffs
 
-The integrated run uses the [GLM benchmark and common evaluation](../analyses/part_c.py), the [initial LightGBM](../analyses/lgbm_baseline.py), the [quadratic GLM handoff](parametric_glm_notes.md) and the [LightGBM tuning handoff](lgbm_tuning_notes.md). The [team assignment record](../TEAM_ASSIGNMENTS.md) documents the division of work.
+The integrated run uses the [GLM benchmark and common evaluation](../analyses/claims_evaluation.py), the [initial LightGBM](../analyses/lgbm_baseline.py), the [quadratic GLM handoff](parametric_glm_notes.md) and the [LightGBM tuning handoff](lgbm_tuning_notes.md). The [team assignment record](../TEAM_ASSIGNMENTS.md) documents the division of work.

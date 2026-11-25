@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import auc
 
-from analyses.part_c import (
+from analyses.claims_evaluation import (
     MODEL_NAMES,
     SPLIT,
     TARGET,

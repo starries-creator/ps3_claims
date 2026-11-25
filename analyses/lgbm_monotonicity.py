@@ -35,7 +35,7 @@ from analyses.lgbm_tuning import (
     CV_SPLITS,
     PARAMETER_GRID,
 )
-from analyses.part_c import SPLIT, prepare_model_data
+from analyses.claims_evaluation import SPLIT, prepare_model_data
 from ps3.data import load_transform
 
 

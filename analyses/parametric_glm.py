@@ -95,7 +95,7 @@ def fit_model(train, variant):
 
 def run_parametric_glm(frame):
     """Fit the quadratic handoff model and return metrics and IDpol-indexed predictions."""
-    from analyses.part_c import model_metrics, sample_frames
+    from analyses.claims_evaluation import model_metrics, sample_frames
 
     train, test = sample_frames(frame)
     model = fit_model(train, "quadratic")
@@ -189,7 +189,7 @@ def main():
 
     input_frame = pd.read_parquet(args.data) if args.data else load_transform()
     if args.handoff:
-        from analyses.part_c import SPLIT, prepare_data, write_model_metrics
+        from analyses.claims_evaluation import SPLIT, prepare_data, write_model_metrics
 
         frame = prepare_model_data(
             prepare_data(input_frame), SPLIT["id_columns"], SPLIT["training_fraction"]

@@ -6,7 +6,7 @@ import pytest
 from sklearn.metrics import mean_tweedie_deviance
 
 from analyses import lgbm_monotonicity as ex1
-from analyses.part_c import prepare_model_data
+from analyses.ps3_script import load_model_data
 
 
 @pytest.fixture(scope="module")
@@ -25,7 +25,7 @@ def exercise(tmp_path_factory):
     }
     frame = pd.DataFrame(features)
     results = tmp_path_factory.mktemp("ps4-ex1")
-    data = prepare_model_data(frame)
+    data = load_model_data(frame)
     train = data.loc[data["sample"].eq("train")]
     calls = []
     select = ex1._select_parameters

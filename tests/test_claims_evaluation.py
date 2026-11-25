@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from analyses import part_c
+from analyses import claims_evaluation
 from analyses.model_comparison import (
     comparison_curves,
     lorenz_curve,
@@ -20,7 +20,7 @@ from ps3.data import create_sample_column
 def policies():
     return pd.DataFrame(
         {
-            **{column: ["A", "A", "B", "B"] for column in part_c.CATEGORICALS},
+            **{column: ["A", "A", "B", "B"] for column in claims_evaluation.CATEGORICALS},
             "BonusMalus": [70, 80, 85, 90],
             "Density": [10, 100, 20, 25],
             "IDpol": [0, 1, 7, 12],
@@ -32,13 +32,13 @@ def policies():
 
 @pytest.fixture
 def samples(policies):
-    frame = part_c.prepare_data(policies.assign(sample=["train", "train", "test", "test"]))
-    return part_c.sample_frames(frame)
+    frame = claims_evaluation.prepare_data(policies.assign(sample=["train", "train", "test", "test"]))
+    return claims_evaluation.sample_frames(frame)
 
 
 def test_prepare_data_uses_loader_and_preserves_features(policies, monkeypatch):
-    monkeypatch.setattr(part_c, "load_transform", lambda: policies)
-    frame = part_c.prepare_data()
+    monkeypatch.setattr(claims_evaluation, "load_transform", lambda: policies)
+    frame = claims_evaluation.prepare_data()
     pd.testing.assert_frame_equal(frame[policies.columns], policies)
     assert frame["PurePremium"].tolist() == [0.0, 4.0, 1.0, 2.0]
     assert "PurePremium" not in policies
@@ -46,14 +46,14 @@ def test_prepare_data_uses_loader_and_preserves_features(policies, monkeypatch):
 
 def test_prepare_data_checks_required_columns(policies):
     with pytest.raises(ValueError, match="Density"):
-        part_c.prepare_data(policies.drop(columns="Density"))
+        claims_evaluation.prepare_data(policies.drop(columns="Density"))
 
 
 @pytest.mark.parametrize("exposure", [0.0, -1.0, np.nan, np.inf])
 def test_invalid_exposure_is_rejected(policies, exposure):
     policies.loc[0, "Exposure"] = exposure
     with pytest.raises(ValueError, match="Exposure"):
-        part_c.prepare_data(policies)
+        claims_evaluation.prepare_data(policies)
 
 
 def test_shared_membership_uses_a_split(policies):
@@ -65,20 +65,20 @@ def test_shared_membership_uses_a_split(policies):
 
 
 def test_invalid_sample_labels_are_rejected(policies):
-    frame = part_c.prepare_data(policies)
+    frame = claims_evaluation.prepare_data(policies)
     with pytest.raises(ValueError, match="valid labels"):
-        part_c.sample_frames(frame.assign(sample=["train", "test", None, "test"]))
+        claims_evaluation.sample_frames(frame.assign(sample=["train", "test", None, "test"]))
 
 
 def test_no_baseline_without_official_sample_column(policies):
     with pytest.raises(ValueError, match="official split"):
-        part_c.run_baseline(part_c.prepare_data(policies))
+        claims_evaluation.run_baseline(claims_evaluation.prepare_data(policies))
 
 
 def test_weighted_deviance_and_claim_totals(samples):
     train, _ = samples
     preds = pd.Series([1.0, 4.0], index=train.index)
-    scores = part_c.evaluate_sample(train, preds)
+    scores = claims_evaluation.evaluate_sample(train, preds)
     # At p=1.5 the individual deviances are 4 and 0, with weights 0.25 and 1.
     assert scores == pytest.approx(
         {"deviance": 0.8, "actual_claim_amount": 4.0, "predicted_claim_amount": 4.25}
@@ -88,14 +88,14 @@ def test_weighted_deviance_and_claim_totals(samples):
 def test_prediction_validation(samples):
     train, _ = samples
     with pytest.raises(ValueError, match="one-dimensional"):
-        part_c.evaluate_sample(train, np.ones((2, 1)))
+        claims_evaluation.evaluate_sample(train, np.ones((2, 1)))
     with pytest.raises(ValueError, match="match"):
-        part_c.evaluate_sample(train, pd.Series([4.0, 1.0], index=train.index[::-1]))
+        claims_evaluation.evaluate_sample(train, pd.Series([4.0, 1.0], index=train.index[::-1]))
     with pytest.raises(ValueError, match="match"):
-        part_c.evaluate_sample(train, pd.Series([1.0], index=train.index[:1]))
+        claims_evaluation.evaluate_sample(train, pd.Series([1.0], index=train.index[:1]))
     for value in [0.0, -1.0, np.nan, np.inf]:
         with pytest.raises(ValueError, match="strictly positive"):
-            part_c.evaluate_sample(train, pd.Series([1.0, value], index=train.index))
+            claims_evaluation.evaluate_sample(train, pd.Series([1.0, value], index=train.index))
 
 
 def test_train_test_metrics_and_aggregation(samples, tmp_path):
@@ -106,8 +106,8 @@ def test_train_test_metrics_and_aggregation(samples, tmp_path):
         write_metrics_csv(tmp_path)
     assert not (tmp_path / "metrics.csv").exists()
 
-    for model in part_c.MODEL_NAMES:
-        metrics = part_c.model_metrics(
+    for model in claims_evaluation.MODEL_NAMES:
+        metrics = claims_evaluation.model_metrics(
             model,
             train,
             test,
@@ -116,15 +116,15 @@ def test_train_test_metrics_and_aggregation(samples, tmp_path):
             parameters={"example": 1},
             selection_method="synthetic test",
         )
-        part_c.write_model_metrics(metrics, tmp_path)
+        claims_evaluation.write_model_metrics(metrics, tmp_path)
     comparison = pd.read_csv(write_metrics_csv(tmp_path))
-    assert list(comparison["model"]) == list(part_c.MODEL_NAMES)
+    assert list(comparison["model"]) == list(claims_evaluation.MODEL_NAMES)
     assert list(comparison["train_deviance"]) == pytest.approx([0.8] * 4)
     assert list(comparison["test_deviance"]) == pytest.approx([0.0] * 4)
     assert json.loads(comparison["parameters"].iloc[-1]) == {"example": 1}
 
     metrics["split_fingerprint"] = "0" * 64
-    part_c.write_model_metrics(metrics, tmp_path)
+    claims_evaluation.write_model_metrics(metrics, tmp_path)
     with pytest.raises(ValueError, match="different policy assignments"):
         read_model_metrics(tmp_path)
 
@@ -133,7 +133,7 @@ def test_overlapping_samples_are_rejected(samples):
     train, _ = samples
     predictions = pd.Series([1.0, 4.0], index=train.index)
     with pytest.raises(ValueError, match="disjoint"):
-        part_c.model_metrics(
+        claims_evaluation.model_metrics(
             "tweedie_glm", train, train, predictions, predictions,
             parameters={}, selection_method="synthetic test",
         )
@@ -142,7 +142,7 @@ def test_overlapping_samples_are_rejected(samples):
 def test_lorenz_curves_keep_initial_and_tuned_predictions_separate(samples):
     _, test = samples
     predictions = {
-        model: pd.Series([1.0, 2.0], index=test.index) for model in part_c.MODEL_NAMES
+        model: pd.Series([1.0, 2.0], index=test.index) for model in claims_evaluation.MODEL_NAMES
     }
     predictions["lightgbm_initial"] = pd.Series([2.0, 1.0], index=test.index)
     curves = comparison_curves(test, predictions)
@@ -169,13 +169,13 @@ def test_benchmark_with_real_glum_and_categorizer(policies):
     frame["Density"] = rng.uniform(20, 250, len(frame))
     frame["ClaimAmountCut"] = rng.uniform(1, 10, len(frame))
     frame = load_model_data(frame)
-    metrics, coefficients, train_predictions, test_predictions = part_c.run_baseline(
+    metrics, coefficients, train_predictions, test_predictions = claims_evaluation.run_baseline(
         frame
     )
     assert metrics["n_train"] + metrics["n_test"] == 80
     assert "intercept" in coefficients
     assert "Density" in coefficients
-    train, test = part_c.sample_frames(frame)
+    train, test = claims_evaluation.sample_frames(frame)
     distribution = glum.TweedieDistribution(1.5)
     for sample, predictions, key in (
         (train, train_predictions, "train_deviance"),
@@ -192,15 +192,15 @@ def test_benchmark_with_real_glum_and_categorizer(policies):
 
 def test_reads_distinct_recorded_a_and_e_metrics(tmp_path):
     source = {
-        "split": part_c.SPLIT,
+        "split": claims_evaluation.SPLIT,
         "train_rows": 2,
         "test_rows": 3,
         "train_weighted_tweedie_deviance": 1.0,
         "test_weighted_tweedie_deviance": 1.2,
-        "target": part_c.TARGET,
-        "target_definition": part_c.TARGET_DEFINITION,
-        "weights": part_c.WEIGHT,
-        "tweedie_power": part_c.TWEEDIE_POWER,
+        "target": claims_evaluation.TARGET,
+        "target_definition": claims_evaluation.TARGET_DEFINITION,
+        "weights": claims_evaluation.WEIGHT,
+        "tweedie_power": claims_evaluation.TWEEDIE_POWER,
         "parameters": {"example": 1},
         "selection_method": "synthetic test",
     }
@@ -233,11 +233,11 @@ def test_save_partial_comparison_validates_predictions_and_writes_figure(samples
     train_predictions = pd.Series([1.0, 4.0], index=train.index)
     test_predictions = pd.Series([1.0, 2.0], index=test.index)
     model = "tweedie_glm"
-    metrics = part_c.model_metrics(
+    metrics = claims_evaluation.model_metrics(
         model, train, test, train_predictions, test_predictions,
         parameters={}, selection_method="synthetic test",
     )
-    part_c.write_model_metrics(metrics, tmp_path)
+    claims_evaluation.write_model_metrics(metrics, tmp_path)
     path = tmp_path / f"{model}_predictions.csv"
     save_comparison(train, test, tmp_path)
     assert not (tmp_path / "lorenz_comparison.png").exists()
@@ -258,11 +258,11 @@ def test_initial_lightgbm_with_real_estimator(policies):
     frame = pd.concat([policies] * 20, ignore_index=True)
     frame["IDpol"] = np.arange(len(frame))
     frame = load_model_data(frame)
-    metrics, predictions = part_c.run_initial_lightgbm(frame)
-    train, test = part_c.sample_frames(frame)
+    metrics, predictions = claims_evaluation.run_initial_lightgbm(frame)
+    train, test = claims_evaluation.sample_frames(frame)
     assert predictions.index.equals(test.index)
-    assert metrics["split_fingerprint"] == part_c.split_fingerprint(train, test)
-    assert metrics["test_deviance"] == part_c.evaluate_sample(test, predictions)["deviance"]
+    assert metrics["split_fingerprint"] == claims_evaluation.split_fingerprint(train, test)
+    assert metrics["test_deviance"] == claims_evaluation.evaluate_sample(test, predictions)["deviance"]
 
 
 def test_lorenz_ties_are_order_independent_and_constant_prediction_is_random():
@@ -290,10 +290,10 @@ def test_lorenz_ties_are_order_independent_and_constant_prediction_is_random():
 def test_model_metrics_rejects_alternate_split(policies):
     frame = pd.concat([policies] * 10, ignore_index=True)
     frame["IDpol"] = np.arange(len(frame))
-    frame = create_sample_column(part_c.prepare_data(frame), "IDpol", training_frac=0.5)
-    train, test = part_c.sample_frames(frame)
+    frame = create_sample_column(claims_evaluation.prepare_data(frame), "IDpol", training_frac=0.5)
+    train, test = claims_evaluation.sample_frames(frame)
     with pytest.raises(ValueError, match="do not match the official split"):
-        part_c.model_metrics(
+        claims_evaluation.model_metrics(
             "parametric_glm", train, test,
             pd.Series(1.0, index=train.index), pd.Series(1.0, index=test.index),
             parameters={}, selection_method="fixture",
@@ -304,21 +304,21 @@ def test_comparison_allows_provisional_record_with_verified_predictions(samples,
     train, test = samples
     train_predictions = pd.Series([1.0, 4.0], index=train.index)
     test_predictions = pd.Series([1.0, 2.0], index=test.index)
-    metrics = part_c.model_metrics(
+    metrics = claims_evaluation.model_metrics(
         "tweedie_glm", train, test, train_predictions, test_predictions,
         parameters={}, selection_method="fixture",
     )
-    part_c.write_model_metrics(metrics, tmp_path)
+    claims_evaluation.write_model_metrics(metrics, tmp_path)
     test_predictions.rename("PurePremiumPredicted").to_csv(
         tmp_path / "tweedie_glm_predictions.csv"
     )
     recorded = {
-        "model": "LightGBM Tweedie tuned", "split": part_c.SPLIT,
+        "model": "LightGBM Tweedie tuned", "split": claims_evaluation.SPLIT,
         "train_rows": len(train), "test_rows": len(test),
         "train_weighted_tweedie_deviance": 1.0,
         "test_weighted_tweedie_deviance": 1.2,
-        "target": part_c.TARGET, "target_definition": part_c.TARGET_DEFINITION,
-        "weights": part_c.WEIGHT, "tweedie_power": part_c.TWEEDIE_POWER,
+        "target": claims_evaluation.TARGET, "target_definition": claims_evaluation.TARGET_DEFINITION,
+        "weights": claims_evaluation.WEIGHT, "tweedie_power": claims_evaluation.TWEEDIE_POWER,
         "parameters": {}, "selection_method": "recorded",
     }
     (tmp_path / "lgbm_tuning_metrics.json").write_text(json.dumps(recorded))
