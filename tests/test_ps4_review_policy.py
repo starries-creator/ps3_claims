@@ -129,15 +129,40 @@ def test_submission_rules_use_pr_description_and_python_changes(
     assert "##[error]" not in result
 
 
-def test_oversized_evidence_keeps_pr_metadata_for_manual_review(monkeypatch):
+def test_oversized_evidence_combines_late_findings_automatically(monkeypatch):
     scripts = Path(__file__).resolve().parents[1] / ".github" / "scripts"
     monkeypatch.syspath_prepend(str(scripts))
     acceptance = importlib.import_module("ps4_acceptance")
-    monkeypatch.setattr(acceptance, "RUBRIC_INPUT_BUDGET", 100)
-    evidence = {"description": "Fit the constrained model.", "code_changes": [{"patch": "x" * 150}]}
+    budget = 4_000
+    monkeypatch.setattr(acceptance, "RUBRIC_INPUT_BUDGET", budget)
+    label = "I am Member A."
+    module = "analyses/learning_curve.py"
+    evidence = {
+        "criteria": [{"id": "PS4-S4", "requirement": "Use descriptive names and avoid internal labels."}],
+        "title": "Plot LightGBM learning curves", "assignment_source": "course",
+        "exercise_sources": [], "earlier_review_sources": [],
+        "description": "Fit the constrained model. " * 450 + label,
+        "changed_paths": [module],
+        "submitted_files": [{"path": module, "status": "added", "previous_path": None}],
+        "code_changes": [{"path": module, "status": "added", "previous_path": None,
+                          "evidence_complete": True, "patch": "+def plot_learning_curve():"}],
+        "snapshots": {module: "def plot_learning_curve():"},
+    }
+    requests = []
 
-    encoded, exceeds_budget = acceptance.encode_evidence(evidence)
+    def review(payload):
+        assert len(payload["input"].encode("utf-8")) <= budget
+        data = json.loads(payload["input"])
+        requests.append(data)
+        if "observations" in data:
+            return next(group for group in data["observations"] if group[0]["status"] == "missing")
+        texts = [record.get("text") or "" for record in data["records"]]
+        return [{"id": "PS4-S4", "status": "missing" if any(label in text for text in texts) else "met",
+                 "evidence": label if any(label in text for text in texts) else "Descriptive name shown."}]
 
-    assert exceeds_budget
-    assert json.loads(encoded) == {"description": evidence["description"], "code_changes": []}
-    assert acceptance.encode_evidence({**evidence, "description": "x" * 150}) == (None, True)
+    monkeypatch.setattr(acceptance, "review_evidence", review)
+    items = acceptance.review_submission({"instructions": "Check the rubric."}, evidence)
+
+    assert sum("records" in request for request in requests) > 1
+    assert any("observations" in request for request in requests)
+    assert items == [{"id": "PS4-S4", "status": "missing", "evidence": label}]
