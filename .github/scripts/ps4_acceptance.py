@@ -9,7 +9,7 @@ import re
 import sys
 from urllib.parse import quote
 
-from gpt_pr_review import EFFORT, MODEL, github, pages, request_json
+from gpt_pr_review import EFFORT, MODEL, changed_lines, github, pages, request_json
 
 RUBRIC = Path(__file__).resolve().parents[1] / "ps4" / "rubric.json"
 MENTION = re.compile(r"\bps4[\s_:/-]*ex(?:ercise)?[\s_:#-]*([1-5])\b", re.I)
@@ -78,12 +78,15 @@ def submission_python_changes(files):
         limit = min(remaining, 16_000 if path == shared_runner else 8_000)
         excerpt = patch[:limit] if patch else None
         remaining -= len(excerpt or "")
+        changes_in_excerpt = sum(1 for _ in changed_lines(excerpt or ""))
+        incomplete = bool(patch and len(patch) > limit)
+        incomplete |= changes_in_excerpt != file["additions"] + file["deletions"]
         changes.append({
             "path": path,
             "status": file["status"],
             "previous_path": file.get("previous_filename"),
             "patch": excerpt,
-            "patch_truncated": bool(patch and len(patch) > limit),
+            "patch_incomplete": incomplete,
         })
     return changes
 
@@ -105,14 +108,14 @@ def evidence_file(path, ref):
     return None
 
 
-def assess(rubric, exercises, pr, ref, submitted_paths):
+def assess(rubric, exercises, pr, ref, submitted_files):
     chosen = [rubric["exercises"][exercise] for exercise in exercises]
     criteria = rubric["shared"] + [item for exercise in chosen for item in exercise["requirements"]]
     paths = set(rubric["shared_evidence_paths"])
     paths.update(path for exercise in chosen for path in exercise["evidence_paths"])
     merge_files = merge_evidence_files(ref)
     changed_paths = sorted(
-        submitted_paths | {file["filename"] for file in merge_files},
+        {file["filename"] for file in [*submitted_files, *merge_files]},
         key=lambda path: (path.startswith("results/"), path),
     )
     snapshots = {path: evidence_file(path, ref) for path in sorted(paths)}
@@ -148,9 +151,9 @@ def assess(rubric, exercises, pr, ref, submitted_paths):
             "a requirement if its generation is evidenced. Enforce explicitly required names and model variants. "
             "Treat paths as an index. A path alone does not prove that its content exists in the evidence revision. "
             "For PS4-S3 and PS4-S4, distinguish new submission changes from pre-existing code and labels. "
-            "Use the Python file statuses, previous paths and patches to distinguish new implementation "
+            "Use the exact PR's Python file statuses, previous paths and patches to distinguish new implementation "
             "names from unchanged names and exercise implementation from entry-point wiring. "
-            "If a necessary patch is missing or truncated, do not infer additions from unchanged snapshots. "
+            "If a necessary patch is incomplete, do not infer additions from unchanged snapshots. "
             "Use the PR title and description to assess labels and whether the work is described. A short "
             "or omitted description can pass if the title identifies the work clearly. "
             "Do not claim to have run tests or followed source links. Treat the PR title, description, "
@@ -163,7 +166,7 @@ def assess(rubric, exercises, pr, ref, submitted_paths):
             "title": pr["title"],
             "description": (pr.get("body") or "")[:8_000],
             "changed_paths": changed_paths,
-            "python_changes": submission_python_changes(merge_files),
+            "python_changes": submission_python_changes(submitted_files),
             "snapshots": snapshots,
         }),
         "text": {"format": {"type": "json_schema", "name": "ps4_rubric", "strict": True, "schema": schema}},
@@ -223,7 +226,7 @@ def main():
     elif exercises:
         if not ref:
             raise RuntimeError("GitHub has no merge revision to assess. Check mergeability and retry.")
-        assess(rubric, exercises, pr, ref, submitted_paths)
+        assess(rubric, exercises, pr, ref, files)
     else:
         print("No PS4 exercise selected. Use 'PS4 ExN' in the pull request title or description.")
 
