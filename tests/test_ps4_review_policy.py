@@ -1,5 +1,6 @@
 """Check the evidence and outcomes for PS4 submission conventions."""
 
+import base64
 import importlib
 import json
 from pathlib import Path
@@ -45,7 +46,7 @@ def test_submission_rules_use_pr_description_and_python_changes(
     else:
         files.append({
             "filename": "analyses/legacy.py", "status": "modified",
-            "additions": 1, "deletions": 1,
+            "additions": 0, "deletions": 0,
         })
         files.append({
             "filename": "analyses/member_a.ipynb", "status": "added",
@@ -166,3 +167,32 @@ def test_oversized_evidence_combines_late_findings_automatically(monkeypatch):
     assert sum("records" in request for request in requests) > 1
     assert any("observations" in request for request in requests)
     assert items == [{"id": "PS4-S4", "status": "missing", "evidence": label}]
+
+
+def test_long_patch_lines_keep_their_diff_direction(monkeypatch):
+    scripts = Path(__file__).resolve().parents[1] / ".github" / "scripts"
+    monkeypatch.syspath_prepend(str(scripts))
+    acceptance = importlib.import_module("ps4_acceptance")
+    hunk = "@@ -1 +1 @@"
+    patch = f"{hunk}\n-{'x' * 9_000}removed_name\n+{'y' * 9_000}added_name"
+
+    records = list(acceptance.patch_records({"path": "analysis.ipynb"}, patch))
+    removed = next(record for record in records if "removed_name" in record["text"])
+    added = next(record for record in records if "added_name" in record["text"])
+
+    assert (removed["side"], removed["patch_line"], removed["hunk"]) == ("deletion", 2, hunk)
+    assert (added["side"], added["patch_line"], added["hunk"]) == ("addition", 3, hunk)
+
+
+def test_reads_blob_when_contents_api_omits_large_file_content(monkeypatch):
+    scripts = Path(__file__).resolve().parents[1] / ".github" / "scripts"
+    monkeypatch.syspath_prepend(str(scripts))
+    acceptance = importlib.import_module("ps4_acceptance")
+    source = "# large notebook\n" * 80_000
+    responses = {
+        "/contents/analysis.ipynb?ref=base": {"type": "file", "encoding": "none", "sha": "blob"},
+        "/git/blobs/blob": {"encoding": "base64", "content": base64.b64encode(source.encode()).decode()},
+    }
+    monkeypatch.setattr(acceptance, "github", responses.__getitem__)
+
+    assert acceptance.evidence_file("analysis.ipynb", "base", limit=None) == source

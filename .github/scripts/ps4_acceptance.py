@@ -11,7 +11,7 @@ import re
 import sys
 from urllib.parse import quote
 
-from gpt_pr_review import EFFORT, MODEL, changed_lines, github, pages, request_json
+from gpt_pr_review import EFFORT, HUNK, MODEL, changed_lines, github, pages, request_json
 
 RUBRIC = Path(__file__).resolve().parents[1] / "ps4" / "rubric.json"
 MENTION = re.compile(r"\bps4[\s_:/-]*ex(?:ercise)?[\s_:#-]*([1-5])\b", re.I)
@@ -89,7 +89,7 @@ def submission_code_changes(pr, files):
             "status": status,
             "previous_path": previous_path,
             "patch": patch,
-            "evidence_complete": line_count == file["additions"] + file["deletions"],
+            "evidence_complete": bool(patch) and line_count == file["additions"] + file["deletions"],
         }
         if not change["evidence_complete"]:
             if merge_base is None and status != "added":
@@ -120,6 +120,31 @@ def text_records(metadata, value):
         yield {**metadata, "offset": offset, "complete": len(value) <= limit, "text": excerpt}
 
 
+def patch_records(metadata, patch):
+    limit = min(8_000, RUBRIC_INPUT_BUDGET // 16)
+    if not patch or len(patch) <= limit:
+        yield from text_records(metadata, patch)
+        return
+
+    hunk, start_hunk = None, None
+    first_row, buffer = 1, ""
+    for row_number, row in enumerate(patch.splitlines(keepends=True), 1):
+        if len(buffer) + len(row) > limit and buffer:
+            yield {**metadata, "hunk": start_hunk, "patch_line": first_row, "complete": False, "text": buffer}
+            buffer = ""
+        if HUNK.match(row):
+            hunk = row.strip()
+        if len(row) > limit:
+            side = {"+": "addition", "-": "deletion", " ": "context"}.get(row[:1]) if hunk else None
+            yield from text_records({**metadata, "hunk": hunk, "patch_line": row_number, "side": side}, row)
+        else:
+            if not buffer:
+                first_row, start_hunk = row_number, hunk
+            buffer += row
+    if buffer:
+        yield {**metadata, "hunk": start_hunk, "patch_line": first_row, "complete": False, "text": buffer}
+
+
 def evidence_records(evidence):
     yield from text_records({"kind": "PR description"}, evidence["description"])
     for file in evidence["submitted_files"]:
@@ -134,7 +159,7 @@ def evidence_records(evidence):
                 (change["base_source"] or "").splitlines(), (change["head_source"] or "").splitlines(),
                 fromfile=change["previous_path"] or change["path"], tofile=change["path"], lineterm="",
             ))
-        yield from text_records(metadata, patch)
+        yield from patch_records(metadata, patch)
     for path, source in evidence["snapshots"].items():
         yield from text_records({"kind": "Merged file", "path": path}, source)
     for path in evidence["changed_paths"]:
@@ -214,6 +239,8 @@ def evidence_file(path, ref, *, limit=24_000):
         return None
     if item.get("type") == "file" and Path(path).suffix not in EVIDENCE_EXTENSIONS:
         return "[File exists at the evidence revision. Non-text contents were not inspected.]"
+    if item.get("type") == "file" and item.get("encoding") == "none" and item.get("sha"):
+        item = github(f"/git/blobs/{item['sha']}")
     if item.get("encoding") == "base64":
         text = base64.b64decode(item["content"]).decode("utf-8", errors="replace")
         return text[:limit] + "\n[truncated]" if limit is not None and len(text) > limit else text
