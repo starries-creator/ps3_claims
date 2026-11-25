@@ -157,7 +157,8 @@ def test_oversized_evidence_combines_late_findings_automatically(monkeypatch):
         data = json.loads(payload["input"])
         requests.append(data)
         if "observations" in data:
-            return next(group for group in data["observations"] if group[0]["status"] == "missing")
+            assert any(group[0]["status"] == "missing" for group in data["observations"])
+            return [{"id": "PS4-S4", "status": "met", "evidence": "Reducer missed the label."}]
         texts = [record.get("text") or "" for record in data["records"]]
         return [{"id": "PS4-S4", "status": "missing" if any(label in text for text in texts) else "met",
                  "evidence": label if any(label in text for text in texts) else "Descriptive name shown."}]
@@ -168,6 +169,15 @@ def test_oversized_evidence_combines_late_findings_automatically(monkeypatch):
     assert sum("records" in request for request in requests) > 1
     assert any("observations" in request for request in requests)
     assert items == [{"id": "PS4-S4", "status": "missing", "evidence": label}]
+
+    def omit_requirement(payload):
+        if any(label in (record.get("text") or "") for record in json.loads(payload["input"])["records"]):
+            return []
+        return review(payload)
+
+    monkeypatch.setattr(acceptance, "review_evidence", omit_requirement)
+    with pytest.raises(RuntimeError, match="each requirement exactly once"):
+        acceptance.review_submission({"instructions": "Check the rubric."}, evidence)
 
 
 def test_long_patch_lines_keep_their_diff_direction(monkeypatch):
@@ -208,8 +218,8 @@ def test_omitted_rename_patch_uses_the_extensionless_old_source(monkeypatch):
     scripts = Path(__file__).resolve().parents[1] / ".github" / "scripts"
     monkeypatch.syspath_prepend(str(scripts))
     acceptance = importlib.import_module("ps4_acceptance")
-    source = "def legacy_member_a(): pass"
-    blob = {"type": "file", "encoding": "base64", "content": base64.b64encode(source.encode()).decode()}
+    source = "# coding: latin-1\n# régression\ndef legacy_member_a(): pass"
+    blob = {"type": "file", "encoding": "base64", "content": base64.b64encode(source.encode("latin-1")).decode()}
     responses = {
         "/compare/base...head": {"merge_base_commit": {"sha": "fork"}},
         "/contents/legacy?ref=fork": blob,

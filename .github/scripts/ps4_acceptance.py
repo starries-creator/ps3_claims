@@ -4,11 +4,13 @@ import base64
 from concurrent.futures import ThreadPoolExecutor
 from difflib import unified_diff
 import html
+from io import BytesIO
 import json
 import os
 from pathlib import Path
 import re
 import sys
+from tokenize import detect_encoding
 from urllib.parse import quote
 
 from gpt_pr_review import EFFORT, HUNK, MODEL, changed_lines, github, pages, request_json
@@ -189,9 +191,18 @@ def evidence_batches(context, field, records):
 
 
 def review_submission(payload, evidence):
+    expected_ids = sorted(item["id"] for item in evidence["criteria"])
+
+    def evaluate(batch, extra_instructions=""):
+        items = review_evidence({**payload, "input": encode_evidence(batch),
+                                 "instructions": payload["instructions"] + extra_instructions})
+        if sorted(item["id"] for item in items) != expected_ids:
+            raise RuntimeError("A rubric review response did not return each requirement exactly once.")
+        return items
+
     encoded = encode_evidence(evidence)
     if len(encoded.encode("utf-8")) <= RUBRIC_INPUT_BUDGET:
-        return review_evidence({**payload, "input": encoded})
+        return evaluate(evidence)
 
     context = {key: evidence[key] for key in (
         "criteria", "title", "assignment_source", "exercise_sources", "earlier_review_sources",
@@ -210,21 +221,23 @@ def review_submission(payload, evidence):
         "passing observation that only covers a different part of the submission."
     )
 
-    def evaluate(batch, extra_instructions):
-        return review_evidence({**payload, "input": encode_evidence(batch),
-                                "instructions": payload["instructions"] + extra_instructions})
-
     batches = list(evidence_batches(context, "records", evidence_records(evidence)))
     print(f"Reviewing oversized PS4 evidence automatically in {len(batches)} batches.")
     with ThreadPoolExecutor(max_workers=3) as executor:
         observations = list(executor.map(lambda batch: evaluate(batch, batch_instructions), batches))
+        violations = {}
+        for group in observations:
+            for item in group:
+                if item["status"] == "missing":
+                    violations.setdefault(item["id"], item)
         while True:
             # Each reduction sends the structured observations for all of its child batches.
             observations = [[{**item, "evidence": item["evidence"][:400]} for item in group]
                             for group in observations]
             combined = list(evidence_batches(context, "observations", observations))
             if len(combined) == 1:
-                return evaluate(combined[0], combine_instructions + " Give the final verdict for every item.")
+                final = evaluate(combined[0], combine_instructions + " Give the final verdict for every item.")
+                return [violations.get(item["id"], item) for item in final]
             if len(combined) >= len(observations):
                 raise RuntimeError("Rubric observations do not fit into a smaller number of requests.")
             observations = list(executor.map(
@@ -250,8 +263,9 @@ def evidence_file(path, ref, *, limit=24_000, source_required=False):
         data = base64.b64decode(item["content"])
         if source_required:
             try:
-                text = data.decode("utf-8")
-            except UnicodeDecodeError:
+                encoding, _ = detect_encoding(BytesIO(data).readline)
+                text = data.decode(encoding)
+            except (UnicodeDecodeError, SyntaxError, LookupError):
                 return None
         else:
             text = data.decode("utf-8", errors="replace")
@@ -331,8 +345,6 @@ def assess(rubric, exercises, pr, ref, submitted_files):
     }
     items = review_submission(payload, evidence)
     ordered_ids = [item["id"] for item in criteria]
-    if sorted(item["id"] for item in items) != sorted(ordered_ids):
-        raise RuntimeError("The rubric review did not return each requirement exactly once.")
     unavailable = [change["path"] for change in code_changes if not change["evidence_complete"]]
     for item in items:
         if item["id"] not in SUBMISSION_RULES:
