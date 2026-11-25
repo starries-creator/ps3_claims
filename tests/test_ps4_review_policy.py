@@ -194,7 +194,12 @@ def test_reads_blob_when_contents_api_omits_large_file_content(monkeypatch):
         "/contents/analysis.ipynb?ref=base": {"type": "file", "encoding": "none", "sha": "blob"},
         "/git/blobs/blob": {"encoding": "base64", "content": base64.b64encode(source.encode()).decode()},
     }
-    monkeypatch.setattr(acceptance, "github", responses.__getitem__)
+    def github(path, *, accept=None):
+        if path.startswith("/contents/"):
+            assert accept == "application/vnd.github.object+json"
+        return responses[path]
+
+    monkeypatch.setattr(acceptance, "github", github)
 
     assert acceptance.evidence_file("analysis.ipynb", "base", limit=None) == source
 
@@ -210,7 +215,7 @@ def test_omitted_rename_patch_uses_the_extensionless_old_source(monkeypatch):
         "/contents/legacy?ref=fork": blob,
         "/contents/analysis.py?ref=head": blob,
     }
-    monkeypatch.setattr(acceptance, "github", responses.__getitem__)
+    monkeypatch.setattr(acceptance, "github", lambda path, **_: responses[path])
 
     changes = acceptance.submission_code_changes(
         {"base": {"sha": "base"}, "head": {"sha": "head"}},

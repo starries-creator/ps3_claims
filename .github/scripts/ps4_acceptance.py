@@ -235,7 +235,7 @@ def review_submission(payload, evidence):
 
 def evidence_file(path, ref, *, limit=24_000, source_required=False):
     try:
-        item = github(f"/contents/{quote(path, safe='/')}?ref={ref}")
+        item = github(f"/contents/{quote(path, safe='/')}?ref={ref}", accept="application/vnd.github.object+json")
     except RuntimeError as exc:
         if "HTTP 404" in str(exc):
             return None

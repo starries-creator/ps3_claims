@@ -68,7 +68,7 @@ class GitHubVerdictDenied(RuntimeError):
     """The repository has disabled formal reviews by its Actions token."""
 
 
-def request_json(service, url, token, payload=None, *, method=None):
+def request_json(service, url, token, payload=None, *, method=None, accept=None):
     headers = {
         "Authorization": f"Bearer {token}",
         "Accept": "application/json",
@@ -78,6 +78,8 @@ def request_json(service, url, token, payload=None, *, method=None):
     if service == "GitHub":
         headers["Accept"] = "application/vnd.github+json"
         headers["X-GitHub-Api-Version"] = "2022-11-28"
+    if accept:
+        headers["Accept"] = accept
     data = json.dumps(payload).encode() if payload is not None else None
     try:
         with urlopen(Request(url, data=data, headers=headers, method=method), timeout=300) as response:
@@ -104,10 +106,10 @@ def request_json(service, url, token, payload=None, *, method=None):
         raise RuntimeError(f"{service} request timed out or failed to connect.") from None
 
 
-def github(path, payload=None, *, method=None):
+def github(path, payload=None, *, method=None, accept=None):
     repo = os.environ["GITHUB_REPOSITORY"]
     url = f"{os.environ['GITHUB_API_URL']}/repos/{repo}{path}"
-    return request_json("GitHub", url, os.environ["GITHUB_TOKEN"], payload, method=method)
+    return request_json("GitHub", url, os.environ["GITHUB_TOKEN"], payload, method=method, accept=accept)
 
 
 def pages(path):
