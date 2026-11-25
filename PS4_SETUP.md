@@ -46,6 +46,16 @@ Pass the same raw feature columns to both pipelines. Each pipeline applies its f
 
 ## PS4 pull request checks
 
+Put each exercise's implementation in a descriptive Python module, such as
+`analyses/learning_curve.py`. Add a labelled `# %%` section and the necessary
+imports and calls to `analyses/ps3_script.py` for a reproducible run. Follow the
+instructor's named file or format when specified. For example, the metrics
+function belongs in `ps3/evaluation/_evaluate_predictions.py`.
+
+Use a title that says what changed, such as **PS4 Ex2 — Plot the LightGBM
+learning curve**. Use descriptive names for new files and public functions.
+Keep internal teammate labels out of names and PR descriptions.
+
 For the four teammates who work on a single exercise, the
 [acceptance rubric](.github/ps4/rubric.json) selects that exercise by GitHub PR
 author from PR #16 onward. The maintainer and any other author can use `PS4 ExN`

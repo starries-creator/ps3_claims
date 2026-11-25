@@ -64,13 +64,13 @@ Tuned LightGBM has the lowest test deviance and the highest observed Gini, with 
 | Path | Contents |
 | --- | --- |
 | [`ps3/`](ps3/) | Data preparation, fixed split and preprocessing |
-| [`analyses/`](analyses/) | Model implementations and run commands |
+| [`analyses/`](analyses/) | The [original exercise sequence](analyses/ps3_script.py) and separate model implementations |
 | [`tests/`](tests/) | Unit and integration tests |
 | [`results/`](results/) | Submitted metrics, figures and analysis notes |
 
 The original division of work is recorded in the [team assignments](TEAM_ASSIGNMENTS.md).
 
-## PS4 — Exercise 1: monotonicity constraints (Member E)
+## PS4 — Exercise 1: monotonicity constraints
 
 See the [PS4 environment and data setup](PS4_SETUP.md) for Conda setup, the shared data cache, and validation commands.
 
@@ -86,7 +86,7 @@ To reuse a local prepared Parquet cache, pass `--data data/shared_final.parquet`
 
 - `results/bonusmalus_weighted_claims.png` and its grouped CSV: training-only Exposure-weighted pure premium by observed `BonusMalus`.
 - `results/ps4_ex1_monotonicity_cv.json`: fold scores for constrained and unconstrained parameter candidates and each selected configuration.
-- `results/ps4_ex1_monotonicity_metrics.json`: split fingerprint, metrics, feature order, constraint vector and handoff details for A–D.
+- `results/ps4_ex1_monotonicity_metrics.json`: split fingerprint, metrics, feature order, constraint vector and inputs for the later exercises.
 - `results/ps4_ex1_test_predictions.csv`: test predictions aligned by `IDpol`, with `pp_t_lgbm_constrained` and `pp_t_lgbm_unconstrained`. This per-policy file is gitignored; other members can regenerate it with the command above.
 
 The comparison reports selected CV deviance, train deviance and fixed-test deviance for both models. The test values are for final comparison only and do not participate in parameter selection.
