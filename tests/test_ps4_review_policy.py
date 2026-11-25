@@ -47,6 +47,9 @@ def test_submission_rules_use_pr_description_and_python_changes(
             "filename": "analyses/legacy.py", "status": "modified",
             "additions": 1, "deletions": 1,
         })
+        files.append({
+            "filename": "analyses/member_a.ipynb", "status": "added",
+        })
 
     monkeypatch.setenv("OPENAI_API_KEY", "fake-key")
     summary = tmp_path / "summary.md"
@@ -84,6 +87,9 @@ def test_submission_rules_use_pr_description_and_python_changes(
             assert module["base_source"] == "def prior_function():"
             assert module["head_source"] == "def revised_function():"
             assert module["evidence_complete"]
+            assert {"path": "analyses/member_a.ipynb", "status": "added", "previous_path": None} in evidence[
+                "submitted_files"
+            ]
         assert {"PS4-S3", "PS4-S4"} <= {item["id"] for item in evidence["criteria"]}
         assert ("analyses/learning_curve.py" in evidence["snapshots"]) == compliant
         items = [
@@ -118,3 +124,17 @@ def test_submission_rules_use_pr_description_and_python_changes(
     assert f"| PS4-S3 | {expected} |" in result
     assert f"| PS4-S4 | {expected} |" in result
     assert "##[error]" not in result
+
+
+def test_oversized_evidence_keeps_pr_metadata_for_manual_review(monkeypatch):
+    scripts = Path(__file__).resolve().parents[1] / ".github" / "scripts"
+    monkeypatch.syspath_prepend(str(scripts))
+    acceptance = importlib.import_module("ps4_acceptance")
+    monkeypatch.setattr(acceptance, "RUBRIC_INPUT_BUDGET", 100)
+    evidence = {"description": "Fit the constrained model.", "python_changes": [{"patch": "x" * 150}]}
+
+    encoded, exceeds_budget = acceptance.encode_evidence(evidence)
+
+    assert exceeds_budget
+    assert json.loads(encoded) == {"description": evidence["description"], "python_changes": []}
+    assert acceptance.encode_evidence({**evidence, "description": "x" * 150}) == (None, True)
