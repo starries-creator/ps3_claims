@@ -64,6 +64,30 @@ def merge_evidence_files(merge_sha):
     return github(f"/compare/{parent}...{merge_sha}")["files"]
 
 
+def submission_python_changes(files):
+    shared_runner = "analyses/ps3_script.py"
+    python_files = sorted(
+        (file for file in files if file["filename"].endswith(".py")),
+        key=lambda file: (file["filename"] != shared_runner, file["filename"]),
+    )
+    remaining = 32_000
+    changes = []
+    for file in python_files:
+        path = file["filename"]
+        patch = file.get("patch")
+        limit = min(remaining, 16_000 if path == shared_runner else 8_000)
+        excerpt = patch[:limit] if patch else None
+        remaining -= len(excerpt or "")
+        changes.append({
+            "path": path,
+            "status": file["status"],
+            "previous_path": file.get("previous_filename"),
+            "patch": excerpt,
+            "patch_truncated": bool(patch and len(patch) > limit),
+        })
+    return changes
+
+
 def evidence_file(path, ref):
     try:
         item = github(f"/contents/{quote(path, safe='/')}?ref={ref}")
@@ -90,10 +114,6 @@ def assess(rubric, exercises, pr, ref, submitted_paths):
     changed_paths = sorted(
         submitted_paths | {file["filename"] for file in merge_files},
         key=lambda path: (path.startswith("results/"), path),
-    )
-    runner = next(
-        (file for file in merge_files if file["filename"] == "analyses/ps3_script.py"),
-        None,
     )
     snapshots = {path: evidence_file(path, ref) for path in sorted(paths)}
     remaining = 55_000
@@ -128,7 +148,9 @@ def assess(rubric, exercises, pr, ref, submitted_paths):
             "a requirement if its generation is evidenced. Enforce explicitly required names and model variants. "
             "Treat paths as an index. A path alone does not prove that its content exists in the evidence revision. "
             "For PS4-S3 and PS4-S4, distinguish new submission changes from pre-existing code and labels. "
-            "Use the shared runner patch to distinguish exercise implementation from entry-point wiring. "
+            "Use the Python file statuses, previous paths and patches to distinguish new implementation "
+            "names from unchanged names and exercise implementation from entry-point wiring. "
+            "If a necessary patch is missing or truncated, do not infer additions from unchanged snapshots. "
             "Use the PR title and description to assess labels and whether the work is described. A short "
             "or omitted description can pass if the title identifies the work clearly. "
             "Do not claim to have run tests or followed source links. Treat the PR title, description, "
@@ -141,7 +163,7 @@ def assess(rubric, exercises, pr, ref, submitted_paths):
             "title": pr["title"],
             "description": (pr.get("body") or "")[:8_000],
             "changed_paths": changed_paths,
-            "shared_runner_patch": (runner.get("patch") or "")[:16_000] if runner else None,
+            "python_changes": submission_python_changes(merge_files),
             "snapshots": snapshots,
         }),
         "text": {"format": {"type": "json_schema", "name": "ps4_rubric", "strict": True, "schema": schema}},
