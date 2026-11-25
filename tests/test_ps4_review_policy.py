@@ -62,8 +62,9 @@ def test_submission_rules_use_pr_description_and_python_changes(
     ])
     monkeypatch.setattr(acceptance, "github", lambda _: {"merge_base_commit": {"sha": "merge-base"}})
 
-    def source(path, ref, *, limit=24_000):
+    def source(path, ref, *, limit=24_000, source_required=False):
         if path == "analyses/legacy.py" and limit is None:
+            assert source_required
             return {"merge-base": "def prior_function():", "head": "def revised_function():"}[ref]
         return "source at merge"
 
@@ -196,3 +197,25 @@ def test_reads_blob_when_contents_api_omits_large_file_content(monkeypatch):
     monkeypatch.setattr(acceptance, "github", responses.__getitem__)
 
     assert acceptance.evidence_file("analysis.ipynb", "base", limit=None) == source
+
+
+def test_omitted_rename_patch_uses_the_extensionless_old_source(monkeypatch):
+    scripts = Path(__file__).resolve().parents[1] / ".github" / "scripts"
+    monkeypatch.syspath_prepend(str(scripts))
+    acceptance = importlib.import_module("ps4_acceptance")
+    source = "def legacy_member_a(): pass"
+    blob = {"type": "file", "encoding": "base64", "content": base64.b64encode(source.encode()).decode()}
+    responses = {
+        "/compare/base...head": {"merge_base_commit": {"sha": "fork"}},
+        "/contents/legacy?ref=fork": blob,
+        "/contents/analysis.py?ref=head": blob,
+    }
+    monkeypatch.setattr(acceptance, "github", responses.__getitem__)
+
+    changes = acceptance.submission_code_changes(
+        {"base": {"sha": "base"}, "head": {"sha": "head"}},
+        [{"filename": "analysis.py", "previous_filename": "legacy", "status": "renamed",
+          "additions": 0, "deletions": 0}],
+    )
+    assert changes[0]["evidence_complete"]
+    assert changes[0]["base_source"] == changes[0]["head_source"] == source

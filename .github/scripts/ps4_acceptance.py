@@ -72,7 +72,10 @@ def merge_evidence_files(merge_sha):
 def submission_code_changes(pr, files):
     shared_runner = "analyses/ps3_script.py"
     code_files = sorted(
-        (file for file in files if Path(file["filename"]).suffix in CODE_EXTENSIONS),
+        (file for file in files if any(
+            Path(path).suffix in CODE_EXTENSIONS
+            for path in (file["filename"], file.get("previous_filename")) if path
+        )),
         key=lambda file: (file["filename"] != shared_runner, file["filename"]),
     )
     changes = []
@@ -94,8 +97,10 @@ def submission_code_changes(pr, files):
         if not change["evidence_complete"]:
             if merge_base is None and status != "added":
                 merge_base = github(f"/compare/{base}...{head}")["merge_base_commit"]["sha"]
-            before = None if status == "added" else evidence_file(previous_path or path, merge_base, limit=None)
-            after = None if status == "removed" else evidence_file(path, head, limit=None)
+            before = None if status == "added" else evidence_file(
+                previous_path or path, merge_base, limit=None, source_required=True,
+            )
+            after = None if status == "removed" else evidence_file(path, head, limit=None, source_required=True)
             change["base_source"] = before
             change["head_source"] = after
             change["evidence_complete"] = (status == "added" or before is not None) and (
@@ -228,7 +233,7 @@ def review_submission(payload, evidence):
             ))
 
 
-def evidence_file(path, ref, *, limit=24_000):
+def evidence_file(path, ref, *, limit=24_000, source_required=False):
     try:
         item = github(f"/contents/{quote(path, safe='/')}?ref={ref}")
     except RuntimeError as exc:
@@ -237,12 +242,19 @@ def evidence_file(path, ref, *, limit=24_000):
         raise
     if not isinstance(item, dict):
         return None
-    if item.get("type") == "file" and Path(path).suffix not in EVIDENCE_EXTENSIONS:
+    if item.get("type") == "file" and not source_required and Path(path).suffix not in EVIDENCE_EXTENSIONS:
         return "[File exists at the evidence revision. Non-text contents were not inspected.]"
     if item.get("type") == "file" and item.get("encoding") == "none" and item.get("sha"):
         item = github(f"/git/blobs/{item['sha']}")
     if item.get("encoding") == "base64":
-        text = base64.b64decode(item["content"]).decode("utf-8", errors="replace")
+        data = base64.b64decode(item["content"])
+        if source_required:
+            try:
+                text = data.decode("utf-8")
+            except UnicodeDecodeError:
+                return None
+        else:
+            text = data.decode("utf-8", errors="replace")
         return text[:limit] + "\n[truncated]" if limit is not None and len(text) > limit else text
     return None
 
