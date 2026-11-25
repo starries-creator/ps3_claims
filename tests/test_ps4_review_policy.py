@@ -16,13 +16,18 @@ def test_submission_rules_use_pr_description_and_python_changes(
     acceptance = importlib.import_module("ps4_acceptance")
     rubric = acceptance.load_rubric()
     title = "PS4 Ex2 — Plot the LightGBM learning curve"
-    description = "Plots train and test deviance." if compliant else "I am Member A."
+    description = "Plots train and test deviance. " * 300
+    if not compliant:
+        description += "I am Member A."
     runner_line = (
         "+from analyses.learning_curve import plot_learning_curve"
         if compliant else "+def fit_and_plot_entire_exercise(frame):"
     )
     runner_diff = f"@@ -40,0 +41 @@\n{runner_line}"
-    module_diff = "@@ -1 +1 @@\n-def member_a(frame):\n+def plot_learning_curve(frame):"
+    module_diff = (
+        "@@ -1 +1,2 @@\n-def member_a(frame):\n+    # " + "x" * 8_001
+        + "\n+def plot_learning_curve(frame):"
+    )
     runner = {
         "filename": "analyses/ps3_script.py", "status": "modified", "patch": runner_diff,
         "additions": 1, "deletions": 0,
@@ -34,7 +39,7 @@ def test_submission_rules_use_pr_description_and_python_changes(
             "status": "renamed",
             "previous_filename": "analyses/member_a.py",
             "patch": module_diff,
-            "additions": 1,
+            "additions": 2,
             "deletions": 1,
         })
     else:
@@ -49,7 +54,14 @@ def test_submission_rules_use_pr_description_and_python_changes(
     monkeypatch.setattr(acceptance, "merge_evidence_files", lambda _: [
         {"filename": "analyses/merge_only.py"},
     ])
-    monkeypatch.setattr(acceptance, "evidence_file", lambda *_: "source at merge")
+    monkeypatch.setattr(acceptance, "github", lambda _: {"merge_base_commit": {"sha": "merge-base"}})
+
+    def source(path, ref, *, limit=24_000):
+        if path == "analyses/legacy.py" and limit is None:
+            return {"merge-base": "def prior_function():", "head": "def revised_function():"}[ref]
+        return "source at merge"
+
+    monkeypatch.setattr(acceptance, "evidence_file", source)
 
     def review(_service, _url, _key, payload):
         evidence = json.loads(payload["input"])
@@ -57,7 +69,7 @@ def test_submission_rules_use_pr_description_and_python_changes(
         assert evidence["description"] == description
         changes = {change["path"]: change for change in evidence["python_changes"]}
         assert changes["analyses/ps3_script.py"]["patch"] == runner_diff
-        assert not changes["analyses/ps3_script.py"]["patch_incomplete"]
+        assert changes["analyses/ps3_script.py"]["evidence_complete"]
         assert "analyses/merge_only.py" not in changes
         assert "analyses/merge_only.py" in evidence["snapshots"]
         if compliant:
@@ -65,10 +77,13 @@ def test_submission_rules_use_pr_description_and_python_changes(
             assert module["status"] == "renamed"
             assert module["previous_path"] == "analyses/member_a.py"
             assert module["patch"] == module_diff
-            assert not module["patch_incomplete"]
+            assert module["evidence_complete"]
         else:
-            assert changes["analyses/legacy.py"]["patch"] is None
-            assert changes["analyses/legacy.py"]["patch_incomplete"]
+            module = changes["analyses/legacy.py"]
+            assert module["patch"] is None
+            assert module["base_source"] == "def prior_function():"
+            assert module["head_source"] == "def revised_function():"
+            assert module["evidence_complete"]
         assert {"PS4-S3", "PS4-S4"} <= {item["id"] for item in evidence["criteria"]}
         assert ("analyses/learning_curve.py" in evidence["snapshots"]) == compliant
         items = [
@@ -90,7 +105,8 @@ def test_submission_rules_use_pr_description_and_python_changes(
         }
 
     monkeypatch.setattr(acceptance, "request_json", review)
-    pr = {"title": title, "body": description, "number": 30}
+    pr = {"title": title, "body": description, "number": 30,
+          "base": {"sha": "base"}, "head": {"sha": "head"}}
     if compliant:
         acceptance.assess(rubric, ["2"], pr, "test-merge", files)
     else:

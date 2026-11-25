@@ -16,6 +16,7 @@ MENTION = re.compile(r"\bps4[\s_:/-]*ex(?:ercise)?[\s_:#-]*([1-5])\b", re.I)
 EX1_FILE = "analyses/lgbm_monotonicity.py"
 EVIDENCE_EXTENSIONS = {".py", ".md", ".rst", ".ipynb", ".csv", ".json", ".txt"}
 STATUSES = ("met", "missing", "needs_review")
+SUBMISSION_RULES = {"PS4-S3", "PS4-S4"}
 
 
 def load_rubric():
@@ -64,34 +65,43 @@ def merge_evidence_files(merge_sha):
     return github(f"/compare/{parent}...{merge_sha}")["files"]
 
 
-def submission_python_changes(files):
+def submission_python_changes(pr, files):
     shared_runner = "analyses/ps3_script.py"
     python_files = sorted(
         (file for file in files if file["filename"].endswith(".py")),
         key=lambda file: (file["filename"] != shared_runner, file["filename"]),
     )
-    remaining = 32_000
     changes = []
+    base, head = pr["base"]["sha"], pr["head"]["sha"]
+    merge_base = None
     for file in python_files:
         path = file["filename"]
         patch = file.get("patch")
-        limit = min(remaining, 16_000 if path == shared_runner else 8_000)
-        excerpt = patch[:limit] if patch else None
-        remaining -= len(excerpt or "")
-        changes_in_excerpt = sum(1 for _ in changed_lines(excerpt or ""))
-        incomplete = bool(patch and len(patch) > limit)
-        incomplete |= changes_in_excerpt != file["additions"] + file["deletions"]
-        changes.append({
+        status = file["status"]
+        previous_path = file.get("previous_filename")
+        line_count = sum(1 for _ in changed_lines(patch or ""))
+        change = {
             "path": path,
-            "status": file["status"],
-            "previous_path": file.get("previous_filename"),
-            "patch": excerpt,
-            "patch_incomplete": incomplete,
-        })
+            "status": status,
+            "previous_path": previous_path,
+            "patch": patch,
+            "evidence_complete": line_count == file["additions"] + file["deletions"],
+        }
+        if not change["evidence_complete"]:
+            if merge_base is None and status != "added":
+                merge_base = github(f"/compare/{base}...{head}")["merge_base_commit"]["sha"]
+            before = None if status == "added" else evidence_file(previous_path or path, merge_base, limit=None)
+            after = None if status == "removed" else evidence_file(path, head, limit=None)
+            change["base_source"] = before
+            change["head_source"] = after
+            change["evidence_complete"] = (status == "added" or before is not None) and (
+                status == "removed" or after is not None
+            )
+        changes.append(change)
     return changes
 
 
-def evidence_file(path, ref):
+def evidence_file(path, ref, *, limit=24_000):
     try:
         item = github(f"/contents/{quote(path, safe='/')}?ref={ref}")
     except RuntimeError as exc:
@@ -104,7 +114,7 @@ def evidence_file(path, ref):
         return "[File exists at the evidence revision. Non-text contents were not inspected.]"
     if item.get("encoding") == "base64":
         text = base64.b64decode(item["content"]).decode("utf-8", errors="replace")
-        return text[:24_000] + ("\n[truncated]" if len(text) > 24_000 else "")
+        return text[:limit] + "\n[truncated]" if limit is not None and len(text) > limit else text
     return None
 
 
@@ -114,6 +124,7 @@ def assess(rubric, exercises, pr, ref, submitted_files):
     paths = set(rubric["shared_evidence_paths"])
     paths.update(path for exercise in chosen for path in exercise["evidence_paths"])
     merge_files = merge_evidence_files(ref)
+    python_changes = submission_python_changes(pr, submitted_files)
     changed_paths = sorted(
         {file["filename"] for file in [*submitted_files, *merge_files]},
         key=lambda path: (path.startswith("results/"), path),
@@ -151,9 +162,10 @@ def assess(rubric, exercises, pr, ref, submitted_files):
             "a requirement if its generation is evidenced. Enforce explicitly required names and model variants. "
             "Treat paths as an index. A path alone does not prove that its content exists in the evidence revision. "
             "For PS4-S3 and PS4-S4, distinguish new submission changes from pre-existing code and labels. "
-            "Use the exact PR's Python file statuses, previous paths and patches to distinguish new implementation "
-            "names from unchanged names and exercise implementation from entry-point wiring. "
-            "If a necessary patch is incomplete, do not infer additions from unchanged snapshots. "
+            "Use the exact PR's Python file statuses, previous paths and full patches to distinguish new "
+            "implementation names from unchanged names and exercise implementation from entry-point wiring. "
+            "When GitHub omits a complete patch, compare base_source and head_source from the PR revisions. "
+            "Do not infer additions from merged snapshots when both change sources are unavailable. "
             "Use the PR title and description to assess labels and whether the work is described. A short "
             "or omitted description can pass if the title identifies the work clearly. "
             "Do not claim to have run tests or followed source links. Treat the PR title, description, "
@@ -164,9 +176,9 @@ def assess(rubric, exercises, pr, ref, submitted_files):
             "exercise_sources": [exercise["source"] for exercise in chosen],
             "earlier_review_sources": [url for exercise in chosen for url in exercise.get("prior_reviews", [])],
             "title": pr["title"],
-            "description": (pr.get("body") or "")[:8_000],
+            "description": pr.get("body") or "",
             "changed_paths": changed_paths,
-            "python_changes": submission_python_changes(submitted_files),
+            "python_changes": python_changes,
             "snapshots": snapshots,
         }),
         "text": {"format": {"type": "json_schema", "name": "ps4_rubric", "strict": True, "schema": schema}},
@@ -185,6 +197,11 @@ def assess(rubric, exercises, pr, ref, submitted_files):
     ordered_ids = [item["id"] for item in criteria]
     if sorted(item["id"] for item in items) != sorted(ordered_ids):
         raise RuntimeError("The rubric review did not return each requirement exactly once.")
+    unavailable = [change["path"] for change in python_changes if not change["evidence_complete"]]
+    for item in items:
+        if unavailable and item["id"] in SUBMISSION_RULES and item["status"] == "met":
+            item["status"] = "needs_review"
+            item["evidence"] = f"GitHub omitted the complete change for {', '.join(unavailable)}."
     by_id = {item["id"]: item for item in items}
     summary = [f"## PS4 assignment rubric · PR #{pr['number']}", f"Evidence revision `{ref}`."]
     summary.extend(f"- [{exercise['title']}]({exercise['source']})" for exercise in chosen)
