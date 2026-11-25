@@ -36,7 +36,7 @@ The spline's fixed-test deviance fell slightly, from 74.6672 to 74.6626. The tes
 
 ## Reproduce and integrate
 
-With A's shared split and C's `analyses.part_c` available, run from the repository root:
+With A's shared split and C's `analyses.claims_evaluation` available, run from the repository root:
 
 ```bash
 python -m analyses.parametric_glm --handoff

@@ -30,7 +30,7 @@ python -m analyses.ps3_script all --data data/shared_final.parquet --results-dir
 
 ## Exercise 3 — Improve the model
 
-All four models use the instructor's data transformation and the same fixed split from Exercise 1. The table reports mean Exposure-weighted Tweedie deviance at power 1.5. Lower is better. [Combined results](results/metrics.csv) · [Data transformation](ps3/data/_load_transform.py) · [Evaluation code](analyses/part_c.py) · [Integrated runner](analyses/ps3_script.py)
+All four models use the instructor's data transformation and the same fixed split from Exercise 1. The table reports mean Exposure-weighted Tweedie deviance at power 1.5. Lower is better. [Combined results](results/metrics.csv) · [Data transformation](ps3/data/_load_transform.py) · [Evaluation code](analyses/claims_evaluation.py) · [Integrated runner](analyses/ps3_script.py)
 
 | Model | Train deviance | Test deviance |
 | --- | ---: | ---: |
@@ -41,7 +41,7 @@ All four models use the instructor's data transformation and the same fixed spli
 
 ### Why divide by Exposure?
 
-`PurePremium = ClaimAmountCut / Exposure` expresses clipped claims per unit of coverage, so policies with different coverage durations are comparable. Fitting and evaluation weight each policy by `Exposure`. To get the predicted portfolio claim total, multiply each policy's predicted pure premium by its exposure and sum the amounts. [Shared evaluation](analyses/part_c.py) · [Comparison report](results/final_comparison.md)
+`PurePremium = ClaimAmountCut / Exposure` expresses clipped claims per unit of coverage, so policies with different coverage durations are comparable. Fitting and evaluation weight each policy by `Exposure`. To get the predicted portfolio claim total, multiply each policy's predicted pure premium by its exposure and sum the amounts. [Shared evaluation](analyses/claims_evaluation.py) · [Comparison report](results/final_comparison.md)
 
 ### What changed in the GLM?
 

@@ -15,7 +15,7 @@ import pandas as pd
 from sklearn.exceptions import ConvergenceWarning
 
 from analyses.model_comparison import save_comparison, write_metrics_csv
-from analyses.part_c import (
+from analyses.claims_evaluation import (
     prepare_model_data,
     run_baseline,
     run_initial_lightgbm,
