@@ -15,6 +15,7 @@ RUBRIC = Path(__file__).resolve().parents[1] / "ps4" / "rubric.json"
 MENTION = re.compile(r"\bps4[\s_:/-]*ex(?:ercise)?[\s_:#-]*([1-5])\b", re.I)
 EX1_FILE = "analyses/lgbm_monotonicity.py"
 EVIDENCE_EXTENSIONS = {".py", ".md", ".rst", ".ipynb", ".csv", ".json", ".txt"}
+CODE_EXTENSIONS = {".py", ".ipynb"}
 STATUSES = ("met", "missing", "needs_review")
 SUBMISSION_RULES = {"PS4-S3", "PS4-S4"}
 RUBRIC_INPUT_BUDGET = 180_000  # UTF-8 bytes reserved for the serialized evidence
@@ -66,16 +67,16 @@ def merge_evidence_files(merge_sha):
     return github(f"/compare/{parent}...{merge_sha}")["files"]
 
 
-def submission_python_changes(pr, files):
+def submission_code_changes(pr, files):
     shared_runner = "analyses/ps3_script.py"
-    python_files = sorted(
-        (file for file in files if file["filename"].endswith(".py")),
+    code_files = sorted(
+        (file for file in files if Path(file["filename"]).suffix in CODE_EXTENSIONS),
         key=lambda file: (file["filename"] != shared_runner, file["filename"]),
     )
     changes = []
     base, head = pr["base"]["sha"], pr["head"]["sha"]
     merge_base = None
-    for file in python_files:
+    for file in code_files:
         path = file["filename"]
         patch = file.get("patch")
         status = file["status"]
@@ -109,7 +110,7 @@ def encode_evidence(evidence):
         return encoded, False
     # Keep the rubric, PR metadata and source snapshots for the exercise checks.
     # Do not let missing patches turn into passes for the submission rules.
-    evidence = {**evidence, "python_changes": []}
+    evidence = {**evidence, "code_changes": []}
     encoded = json.dumps(evidence, ensure_ascii=False)
     if len(encoded.encode("utf-8")) <= RUBRIC_INPUT_BUDGET:
         return encoded, True
@@ -139,7 +140,7 @@ def assess(rubric, exercises, pr, ref, submitted_files):
     paths = set(rubric["shared_evidence_paths"])
     paths.update(path for exercise in chosen for path in exercise["evidence_paths"])
     merge_files = merge_evidence_files(ref)
-    python_changes = submission_python_changes(pr, submitted_files)
+    code_changes = submission_code_changes(pr, submitted_files)
     changed_paths = sorted(
         {file["filename"] for file in [*submitted_files, *merge_files]},
         key=lambda path: (path.startswith("results/"), path),
@@ -178,7 +179,7 @@ def assess(rubric, exercises, pr, ref, submitted_files):
             {"path": file["filename"], "status": file["status"], "previous_path": file.get("previous_filename")}
             for file in submitted_files
         ],
-        "python_changes": python_changes,
+        "code_changes": code_changes,
         "snapshots": snapshots,
     }
     encoded_evidence, exceeds_budget = encode_evidence(evidence)
@@ -192,7 +193,7 @@ def assess(rubric, exercises, pr, ref, submitted_files):
             "a requirement if its generation is evidenced. Enforce explicitly required names and model variants. "
             "Treat paths as an index. A path alone does not prove that its content exists in the evidence revision. "
             "For PS4-S3 and PS4-S4, distinguish new submission changes from pre-existing code and labels. "
-            "Use the exact PR's Python file statuses, previous paths and full patches to distinguish new "
+            "Use the exact PR's Python and notebook file statuses, previous paths and full patches to distinguish new "
             "implementation names from unchanged names and exercise implementation from entry-point wiring. "
             "When GitHub omits a complete patch, compare base_source and head_source from the PR revisions. "
             "Do not infer additions from merged snapshots when both change sources are unavailable. "
@@ -213,7 +214,7 @@ def assess(rubric, exercises, pr, ref, submitted_files):
     ordered_ids = [item["id"] for item in criteria]
     if sorted(item["id"] for item in items) != sorted(ordered_ids):
         raise RuntimeError("The rubric review did not return each requirement exactly once.")
-    unavailable = [change["path"] for change in python_changes if not change["evidence_complete"]]
+    unavailable = [change["path"] for change in code_changes if not change["evidence_complete"]]
     for item in items:
         if item["id"] not in SUBMISSION_RULES:
             continue

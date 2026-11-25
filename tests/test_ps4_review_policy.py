@@ -49,6 +49,8 @@ def test_submission_rules_use_pr_description_and_python_changes(
         })
         files.append({
             "filename": "analyses/member_a.ipynb", "status": "added",
+            "patch": '@@ -0,0 +1 @@\n+{"cells":[{"cell_type":"code","source":["def member_a(): pass"]}]}',
+            "additions": 1, "deletions": 0,
         })
 
     monkeypatch.setenv("OPENAI_API_KEY", "fake-key")
@@ -70,7 +72,7 @@ def test_submission_rules_use_pr_description_and_python_changes(
         evidence = json.loads(payload["input"])
         assert evidence["title"] == title
         assert evidence["description"] == description
-        changes = {change["path"]: change for change in evidence["python_changes"]}
+        changes = {change["path"]: change for change in evidence["code_changes"]}
         assert changes["analyses/ps3_script.py"]["patch"] == runner_diff
         assert changes["analyses/ps3_script.py"]["evidence_complete"]
         assert "analyses/merge_only.py" not in changes
@@ -87,6 +89,7 @@ def test_submission_rules_use_pr_description_and_python_changes(
             assert module["base_source"] == "def prior_function():"
             assert module["head_source"] == "def revised_function():"
             assert module["evidence_complete"]
+            assert "def member_a()" in changes["analyses/member_a.ipynb"]["patch"]
             assert {"path": "analyses/member_a.ipynb", "status": "added", "previous_path": None} in evidence[
                 "submitted_files"
             ]
@@ -131,10 +134,10 @@ def test_oversized_evidence_keeps_pr_metadata_for_manual_review(monkeypatch):
     monkeypatch.syspath_prepend(str(scripts))
     acceptance = importlib.import_module("ps4_acceptance")
     monkeypatch.setattr(acceptance, "RUBRIC_INPUT_BUDGET", 100)
-    evidence = {"description": "Fit the constrained model.", "python_changes": [{"patch": "x" * 150}]}
+    evidence = {"description": "Fit the constrained model.", "code_changes": [{"patch": "x" * 150}]}
 
     encoded, exceeds_budget = acceptance.encode_evidence(evidence)
 
     assert exceeds_budget
-    assert json.loads(encoded) == {"description": evidence["description"], "python_changes": []}
+    assert json.loads(encoded) == {"description": evidence["description"], "code_changes": []}
     assert acceptance.encode_evidence({**evidence, "description": "x" * 150}) == (None, True)
