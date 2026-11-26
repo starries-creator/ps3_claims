@@ -103,3 +103,60 @@ Both model variants selected `learning_rate=0.03` and `n_estimators=300` from th
 The constraint slightly worsened mean CV deviance by 0.2581 and fixed-test deviance by 0.1778, while narrowing the train–test gap from 7.8787 to 7.0957. Thus it imposes the required monotonic direction with a modest score tradeoff and a smaller apparent generalisation gap. The plot is descriptive; its 10-point bands have unequal support, especially in the high-BonusMalus tail. Policy counts and total Exposure are in the companion CSV.
 
 Without the monotonicity constraint, a fitted LightGBM can predict a lower pure premium for a higher `BonusMalus` when the other predictors are held fixed. Tree split choices, interactions with other predictors, and sampling noise can create these local reversals, particularly where training exposure is sparse. The increasing constraint rules out decreases along `BonusMalus` while the other features remain fixed.
+
+## PS4 — Exercise 2: Learning Curve
+
+The constrained LightGBM was refitted using the parameters selected in Exercise 1: `learning_rate=0.03` and `n_estimators=300`.
+
+The fixed IDpol split, training-fitted preprocessing, increasing BonusMalus constraint and Exposure weights were retained. Both training and test datasets were passed to `eval_set`, and the learning curve was generated using `lgb.plot_metric()`.
+
+### Reproduce
+
+Run Exercise 2 using the committed Exercise 1 report:
+
+```bash
+python -m analyses.ps3_script ps4-ex2 --data data/ps4_claims.parquet --results-dir results
+```
+
+By default, Exercise 2 reads `ps4_ex1_monotonicity_metrics.json` from the specified results directory.
+
+To reproduce both exercises using a separate results directory:
+
+```bash
+python -m analyses.ps3_script ps4-ex1 --data data/ps4_claims.parquet --results-dir data/custom_results
+
+python -m analyses.ps3_script ps4-ex2 --data data/ps4_claims.parquet --results-dir data/custom_results
+```
+
+Alternatively, an existing Exercise 1 report can be supplied explicitly:
+
+```bash
+python -m analyses.ps3_script ps4-ex2 --data data/ps4_claims.parquet --results-dir data/ex2_outputs --ex1-metrics-path results/ps4_ex1_monotonicity_metrics.json
+```
+
+The report must match the current dataset and fixed sample split. The learning curve uses one-based boosting rounds, consistent with the saved evaluation history and reported iteration numbers.
+```
+
+### Results
+
+| Metric | Value |
+|---|---:|
+| Boosting iterations | 300 |
+| Minimum test metric iteration | 110 |
+| Minimum test metric | 45.169876 |
+| Final training metric | 41.674999 |
+| Final test metric | 45.292159 |
+| Training Tweedie deviance | 67.373712 |
+| Test Tweedie deviance | 74.469452 |
+
+The training metric continued to decrease throughout the boosting iterations. The test metric reached its minimum at iteration 110 and then gradually increased, suggesting mild overfitting.
+
+The original 300 estimators were retained because they were selected through training-only cross-validation. The test curve was used for diagnosis only, not for early stopping or parameter selection.
+
+### Files
+
+- [Learning curve implementation](analyses/learning_curve.py)
+- [Learning curve figure](results/learning_curve.png)
+- [Evaluation history and metrics](results/learning_curve_metrics.json)
+- [Results and interpretation](results/learning_curve_notes.md)
+- [Unit tests](tests/test_learning_curve.py)
