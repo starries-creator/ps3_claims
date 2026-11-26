@@ -264,7 +264,10 @@ def review_submission(payload, evidence):
                              for group in groups for item in group for entry in item["observations"]}.values())
         resolved = list(evidence_batches(context, "observations", observations))
         if len(resolved) <= 1:
-            return evaluate(resolved[0] if resolved else {**context, "observations": []}, combine_instructions)
+            try:
+                return evaluate(resolved[0] if resolved else {**context, "observations": []}, combine_instructions)
+            except RubricOutputLimit:
+                print("Retrying the consolidated rubric response one criterion at a time.")
 
         # Reconcile supporting and conflicting facts before assigning a verdict to a criterion.
         result = []
@@ -286,7 +289,14 @@ def review_submission(payload, evidence):
                 conflicts = list(evidence_batches(scoped, "observations", facts))
                 if len(conflicts) <= 1:
                     final = conflicts[0] if conflicts else {**scoped, "observations": []}
-                    result.extend(evaluate(final, combine_instructions, scoped_payload))
+                    try:
+                        result.extend(evaluate(final, combine_instructions, scoped_payload))
+                    except RubricOutputLimit:
+                        if len(facts) <= 1:
+                            raise
+                        midpoint = len(facts) // 2
+                        halves = [{**scoped, "observations": part} for part in (facts[:midpoint], facts[midpoint:])]
+                        result.append(reconcile_in_order(scoped, halves, scoped_payload, combine_instructions, evaluate))
                     break
                 consolidate = combine_instructions + (
                     " This is an intermediate pass. Return observations, retaining shared subject keys and "
@@ -306,23 +316,50 @@ def review_submission(payload, evidence):
 
 
 def reconcile_in_order(context, batches, payload, instructions, evaluate):
-    """Fold compact conclusions across shards when the raw facts cannot be compressed further."""
-    state = None
+    """Keep independent subject verdicts when all raw facts cannot fit together."""
+    by_subject = {}
     for batch in batches:
-        extra = " Reconcile this shard with the prior conclusion. Keep unresolved conflicts and missing evidence visible."
-        if state is not None:
-            # Reserve space without dropping evidence from the next shard.
-            state_context = {**context, "prior_conclusion": state}
-            parts = evidence_batches(state_context, "observations", batch["observations"])
-        else:
-            parts = [batch]
-        for part in parts:
-            incoming = {**part, "prior_conclusion": state}
-            if len(encode_evidence(incoming).encode("utf-8")) > RUBRIC_INPUT_BUDGET:
-                incoming = part
-            state = evaluate(incoming, instructions + extra + " Limit the conclusion to 500 characters.", payload)[0]
-            state = {**state, "evidence": state["evidence"][:500]}
-    return state
+        for observation in batch["observations"]:
+            by_subject.setdefault(observation["subject"], []).append(observation)
+
+    def decide(facts):
+        candidate = {**context, "observations": facts}
+        if len(encode_evidence(candidate).encode("utf-8")) <= RUBRIC_INPUT_BUDGET:
+            try:
+                return evaluate(candidate, instructions, payload)[0]
+            except RubricOutputLimit:
+                if len(facts) <= 1:
+                    raise
+        midpoint = len(facts) // 2
+        if not midpoint:
+            raise RuntimeError("A single rubric observation exceeds the available input budget.")
+        parts = [decide(facts[:midpoint]), decide(facts[midpoint:])]
+        return evaluate({**context, "subject_verdicts": parts}, instructions, payload)[0]
+
+    outcomes = [decide(facts) for facts in by_subject.values()]
+    # Keep source subjects distinct and preserve the outcome of each model call.
+    violation = next((item for item in outcomes if item["status"] == "missing"), None)
+    if violation:
+        return violation
+    return combine_subject_verdicts(context, outcomes, payload, instructions, evaluate)
+
+
+def combine_subject_verdicts(context, outcomes, payload, instructions, evaluate):
+    if len(outcomes) == 1:
+        return outcomes[0]
+    candidate = {**context, "subject_verdicts": outcomes}
+    if len(encode_evidence(candidate).encode("utf-8")) <= RUBRIC_INPUT_BUDGET:
+        try:
+            return evaluate(candidate, instructions, payload)[0]
+        except RubricOutputLimit:
+            if len(outcomes) <= 2:
+                raise
+    if len(outcomes) <= 2:
+        raise RuntimeError("Two rubric subject verdicts exceed the per-request input budget.")
+    midpoint = len(outcomes) // 2
+    halves = [combine_subject_verdicts(context, part, payload, instructions, evaluate)
+              for part in (outcomes[:midpoint], outcomes[midpoint:])]
+    return combine_subject_verdicts(context, halves, payload, instructions, evaluate)
 
 
 def evidence_file(path, ref, *, limit=24_000, source_required=False):

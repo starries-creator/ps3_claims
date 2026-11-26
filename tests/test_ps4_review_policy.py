@@ -215,8 +215,8 @@ def test_oversized_evidence_combines_late_findings_automatically(monkeypatch):
         if "This is an intermediate pass." in payload["instructions"]:
             facts = [{"subject": record["subject"], "fact": record["fact"]} for record in data["observations"]]
             return [{"id": "PS4-S4", "status": "needs_review", "evidence": "Distinct facts.", "observations": facts}]
-        if data.get("prior_conclusion"):
-            assert data["prior_conclusion"]["evidence"] == "Earlier evidence considered."
+        if data.get("subject_verdicts"):
+            assert all(item["evidence"] == "Earlier evidence considered." for item in data["subject_verdicts"])
         return [{"id": "PS4-S4", "status": "met", "evidence": "Earlier evidence considered."}]
 
     monkeypatch.setattr(acceptance, "review_evidence", review_without_compression)
