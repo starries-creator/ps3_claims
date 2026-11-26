@@ -115,10 +115,15 @@ def run_ps4_ex1(frame, results_dir):
 
 # %% PS4 Exercise 2 — Learning curve
 
-def run_ps4_ex2(frame, results_dir):
+def run_ps4_ex2(frame, results_dir, ex1_metrics_path=None):
     from analyses.learning_curve import run_learning_curve
 
-    _, metrics = run_learning_curve(frame, results_dir)
+    _, metrics = run_learning_curve(
+        frame,
+        results_dir,
+        ex1_metrics_path=ex1_metrics_path,
+    )
+
     return metrics
 
 # %% Shared report and command-line support
@@ -190,7 +195,23 @@ def main(argv=None):
         default="benchmark",
         choices=["check-data", *ps3_sections, "metrics", "all", *ps4_sections],
     )
-    parser.add_argument("--results-dir", type=Path, default=Path("results"))
+    parser.add_argument(
+        "--results-dir",
+        type=Path,
+        default=Path("results"),
+    )
+
+    parser.add_argument(
+        "--ex1-metrics-path",
+        type=Path,
+        default=None,
+        help=(
+            "Exercise 1 metrics JSON for PS4 Exercise 2. "
+            "Defaults to ps4_ex1_monotonicity_metrics.json "
+            "inside --results-dir."
+        ),
+    )
+
     parser.add_argument(
         "--data", type=Path,
         help="Explicit local prepared Parquet cache; otherwise use the instructor loader",
@@ -223,7 +244,14 @@ def main(argv=None):
         print(f"Validated {len(frame):,} policies ({len(train):,} train; {len(test):,} test)")
         return
     if args.action in ps4_sections:
-        ps4_sections[args.action](frame, args.results_dir)
+        if args.action == "ps4-ex2":
+            run_ps4_ex2(
+                frame,
+                args.results_dir,
+                ex1_metrics_path=args.ex1_metrics_path,
+            )
+        else:
+            ps4_sections[args.action](frame, args.results_dir)
         return
 
     archive_results(args.results_dir)

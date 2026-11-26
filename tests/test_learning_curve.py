@@ -213,3 +213,135 @@ def test_test_outcomes_do_not_change_fitted_model(fitted_example):
         rtol=1e-8,
         atol=1e-8,
     )
+
+
+def test_cli_forwards_ex1_metrics_path(monkeypatch, tmp_path):
+    """The CLI must forward an explicitly supplied Ex1 report path."""
+    from analyses import ps3_script
+    from analyses import learning_curve
+
+    frame = pd.DataFrame()
+    report_path = tmp_path / "custom_ex1_metrics.json"
+    results_dir = tmp_path / "outputs"
+
+    captured = {}
+
+    def fake_run(data, output_dir, ex1_metrics_path=None):
+        captured["frame"] = data
+        captured["results_dir"] = output_dir
+        captured["ex1_metrics_path"] = ex1_metrics_path
+        return None, {}
+
+    monkeypatch.setattr(
+        ps3_script,
+        "load_input_data",
+        lambda *args: frame,
+    )
+
+    monkeypatch.setattr(
+        learning_curve,
+        "run_learning_curve",
+        fake_run,
+    )
+
+    ps3_script.main(
+        [
+            "ps4-ex2",
+            "--results-dir",
+            str(results_dir),
+            "--ex1-metrics-path",
+            str(report_path),
+        ]
+    )
+
+    assert captured["frame"] is frame
+    assert captured["results_dir"] == results_dir
+    assert captured["ex1_metrics_path"] == report_path
+
+
+def test_ex1_report_defaults_to_results_dir(monkeypatch, tmp_path):
+    """Ex2 should read the Ex1 report from its results directory."""
+    from analyses import learning_curve
+
+    report_path = tmp_path / "ps4_ex1_monotonicity_metrics.json"
+    report_path.write_text("{}", encoding="utf-8")
+
+    captured = {}
+
+    class ReportLoaded(Exception):
+        pass
+
+    def fake_load(path):
+        captured["path"] = path
+        raise ReportLoaded
+
+    monkeypatch.setattr(
+        learning_curve,
+        "load_ex1_report",
+        fake_load,
+    )
+
+    with pytest.raises(ReportLoaded):
+        learning_curve.run_learning_curve(
+            pd.DataFrame(),
+            results_dir=tmp_path,
+        )
+
+    assert captured["path"] == report_path
+
+
+def test_missing_ex1_report_has_clear_error(tmp_path):
+    """A missing Ex1 report should produce an informative error."""
+    from analyses.learning_curve import run_learning_curve
+
+    with pytest.raises(
+        FileNotFoundError,
+        match="Exercise 1 report not found",
+    ):
+        run_learning_curve(
+            pd.DataFrame(),
+            results_dir=tmp_path,
+        )
+
+
+def test_plot_uses_one_based_boosting_rounds(
+    fitted_example,
+    tmp_path,
+    monkeypatch,
+):
+    """Both plotted curves must use rounds 1 through n."""
+    import lightgbm as lgb
+
+    pipeline, _, _, _, _ = fitted_example
+    model = pipeline.named_steps["model"]
+
+    original_plot_metric = lgb.plot_metric
+    captured = {}
+
+    def capture_plot(*args, **kwargs):
+        ax = original_plot_metric(*args, **kwargs)
+        captured["ax"] = ax
+        return ax
+
+    monkeypatch.setattr(
+        lgb,
+        "plot_metric",
+        capture_plot,
+    )
+
+    plot_learning_curve(
+        model,
+        tmp_path / "learning_curve.png",
+    )
+
+    lines = captured["ax"].get_lines()
+
+    assert len(lines) == 2
+
+    expected_rounds = np.arange(1, 11)
+
+    for line in lines:
+        np.testing.assert_array_equal(
+            line.get_xdata(),
+            expected_rounds,
+        )

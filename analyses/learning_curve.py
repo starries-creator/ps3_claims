@@ -37,6 +37,7 @@ EX1_METRICS_PATH = (
 
 def load_ex1_report(path=EX1_METRICS_PATH):
     """Load the parameters selected in Exercise 1."""
+
     with Path(path).open(encoding="utf-8") as file:
         return json.load(file)
 
@@ -125,6 +126,15 @@ def plot_learning_curve(model, output_path):
         ylabel="Exposure-weighted Tweedie Metric",
     )
 
+    # Convert history indices to one-based boosting rounds.
+    for line in ax.get_lines():
+        n_rounds = len(line.get_ydata())
+        line.set_xdata(np.arange(1, n_rounds + 1))
+
+    # Update the horizontal axis after changing the coordinates.
+    ax.relim()
+    ax.autoscale(enable=True, axis="x")
+
     ax.grid(alpha=0.25)
     ax.figure.tight_layout()
     ax.figure.savefig(output_path, dpi=180)
@@ -137,9 +147,25 @@ def plot_learning_curve(model, output_path):
 def run_learning_curve(
     frame,
     results_dir="results",
-    ex1_metrics_path=EX1_METRICS_PATH,
+    ex1_metrics_path=None,
 ):
     """Run Exercise 2 and save the learning curve and metrics."""
+
+    results_dir = Path(results_dir)
+
+    # Use the Ex1 report from the same results directory by default.
+    if ex1_metrics_path is None:
+        ex1_metrics_path = (
+            results_dir / "ps4_ex1_monotonicity_metrics.json"
+        )
+
+    ex1_metrics_path = Path(ex1_metrics_path)
+
+    if not ex1_metrics_path.is_file():
+        raise FileNotFoundError(
+            f"Exercise 1 report not found: {ex1_metrics_path}. "
+            "Run Exercise 1 first or provide --ex1-metrics-path."
+        )
 
     report = load_ex1_report(ex1_metrics_path)
 
@@ -269,7 +295,7 @@ def run_learning_curve(
         ),
     }
 
-    results_dir = Path(results_dir)
+    # Save the learning curve and evaluation history.
     results_dir.mkdir(parents=True, exist_ok=True)
 
     plot_learning_curve(

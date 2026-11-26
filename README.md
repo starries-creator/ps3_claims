@@ -112,8 +112,29 @@ The fixed IDpol split, training-fitted preprocessing, increasing BonusMalus cons
 
 ### Reproduce
 
+Run Exercise 2 using the committed Exercise 1 report:
+
 ```bash
 python -m analyses.ps3_script ps4-ex2 --data data/ps4_claims.parquet --results-dir results
+```
+
+By default, Exercise 2 reads `ps4_ex1_monotonicity_metrics.json` from the specified results directory.
+
+To reproduce both exercises using a separate results directory:
+
+```bash
+python -m analyses.ps3_script ps4-ex1 --data data/ps4_claims.parquet --results-dir data/custom_results
+
+python -m analyses.ps3_script ps4-ex2 --data data/ps4_claims.parquet --results-dir data/custom_results
+```
+
+Alternatively, an existing Exercise 1 report can be supplied explicitly:
+
+```bash
+python -m analyses.ps3_script ps4-ex2 --data data/ps4_claims.parquet --results-dir data/ex2_outputs --ex1-metrics-path results/ps4_ex1_monotonicity_metrics.json
+```
+
+The report must match the current dataset and fixed sample split. The learning curve uses one-based boosting rounds, consistent with the saved evaluation history and reported iteration numbers.
 ```
 
 ### Results
