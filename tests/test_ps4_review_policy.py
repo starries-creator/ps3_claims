@@ -151,6 +151,9 @@ def test_oversized_evidence_combines_late_findings_automatically(monkeypatch):
         "snapshots": {module: "def plot_learning_curve():"},
     }
     requests = []
+    schema = {"properties": {"items": {"items": {"properties": {"id": {"enum": ["PS4-S4"]}},
+                                                  "required": ["id", "status", "evidence"]}}}}
+    request = {"instructions": "Check the rubric.", "text": {"format": {"schema": schema}}}
 
     def review(payload):
         assert len(payload["input"].encode("utf-8")) <= budget
@@ -158,13 +161,18 @@ def test_oversized_evidence_combines_late_findings_automatically(monkeypatch):
         requests.append(data)
         if "observations" in data:
             assert "unless another observation specifically disproves them" in payload["instructions"]
-            return next(group for group in data["observations"] if group[0]["status"] == "missing")
+            facts = {item["fact"] for item in data["observations"]}
+            assert {label, "Descriptive name shown."} <= facts
+            return [{"id": "PS4-S4", "status": "missing", "evidence": label}]
         texts = [record.get("text") or "" for record in data["records"]]
-        return [{"id": "PS4-S4", "status": "missing" if any(label in text for text in texts) else "met",
-                 "evidence": label if any(label in text for text in texts) else "Descriptive name shown."}]
+        facts = ["Descriptive name shown."]
+        if any(label in text for text in texts):
+            facts.append(label)
+        return [{"id": "PS4-S4", "status": "needs_review", "evidence": "Batched evidence.",
+                 "observations": [{"subject": "PR description", "fact": fact} for fact in facts]}]
 
     monkeypatch.setattr(acceptance, "review_evidence", review)
-    items = acceptance.review_submission({"instructions": "Check the rubric."}, evidence)
+    items = acceptance.review_submission(request, evidence)
 
     assert sum("records" in request for request in requests) > 1
     assert any("observations" in request for request in requests)
@@ -177,7 +185,7 @@ def test_oversized_evidence_combines_late_findings_automatically(monkeypatch):
 
     monkeypatch.setattr(acceptance, "review_evidence", omit_requirement)
     with pytest.raises(RuntimeError, match="each requirement exactly once"):
-        acceptance.review_submission({"instructions": "Check the rubric."}, evidence)
+        acceptance.review_submission(request, evidence)
 
 
 def test_long_patch_lines_keep_their_diff_direction(monkeypatch):

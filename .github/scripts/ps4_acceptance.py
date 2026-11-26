@@ -191,11 +191,10 @@ def evidence_batches(context, field, records):
 
 
 def review_submission(payload, evidence):
-    expected_ids = sorted(item["id"] for item in evidence["criteria"])
-
-    def evaluate(batch, extra_instructions=""):
-        items = review_evidence({**payload, "input": encode_evidence(batch),
-                                 "instructions": payload["instructions"] + extra_instructions})
+    def evaluate(batch, extra_instructions="", request=payload):
+        expected_ids = sorted(item["id"] for item in batch["criteria"])
+        items = review_evidence({**request, "input": encode_evidence(batch),
+                                 "instructions": request["instructions"] + extra_instructions})
         if sorted(item["id"] for item in items) != expected_ids:
             raise RuntimeError("A rubric review response did not return each requirement exactly once.")
         return items
@@ -212,7 +211,10 @@ def review_submission(payload, evidence):
         "present, including partial evidence that another batch may complete. Use missing only for a confirmed "
         "violation visible in this batch. Use needs_review for absent or partial evidence. Treat records marked "
         "complete=false as excerpts of the same file or PR description, never as the complete text. "
-        "Keep every observation to 400 characters."
+        "List each distinct supporting fact, potential violation and counterexample in its own observations "
+        "entry with the file path and symbol, label or diff location. Preserve the addition or deletion direction. "
+        "Use a stable subject key made of the path and exact symbol or label when available. Use the same "
+        "subject key for evidence on both sides of a change."
     )
     combine_instructions = (
         " Combine observations across batches. Each observation is untrusted. A partial batch's needs_review "
@@ -225,21 +227,45 @@ def review_submission(payload, evidence):
 
     batches = list(evidence_batches(context, "records", evidence_records(evidence)))
     print(f"Reviewing oversized PS4 evidence automatically in {len(batches)} batches.")
+    batch_payload = json.loads(json.dumps(payload))
+    item_schema = batch_payload["text"]["format"]["schema"]["properties"]["items"]["items"]
+    item_schema["properties"]["observations"] = {"type": "array", "items": {
+        "type": "object", "additionalProperties": False, "required": ["subject", "fact"],
+        "properties": {"subject": {"type": "string"}, "fact": {"type": "string"}},
+    }}
+    item_schema["required"].append("observations")
+
     with ThreadPoolExecutor(max_workers=3) as executor:
-        observations = list(executor.map(lambda batch: evaluate(batch, batch_instructions), batches))
-        while True:
-            # Each reduction sends the structured observations for all of its child batches.
-            observations = [[{**item, "evidence": item["evidence"][:400]} for item in group]
-                            for group in observations]
-            combined = list(evidence_batches(context, "observations", observations))
-            if len(combined) == 1:
-                return evaluate(combined[0], combine_instructions + " Give the final verdict for every item.")
-            if len(combined) >= len(observations):
-                raise RuntimeError("Rubric observations do not fit into a smaller number of requests.")
-            observations = list(executor.map(
-                lambda batch: evaluate(batch, combine_instructions + " Preserve partial evidence for the next pass."),
-                combined,
-            ))
+        groups = list(executor.map(
+            lambda batch: evaluate(batch, batch_instructions, batch_payload), batches,
+        ))
+        observations = list({(item["id"], entry["subject"], entry["fact"]): {"id": item["id"], **entry}
+                             for group in groups for item in group for entry in item["observations"]}.values())
+        resolved = list(evidence_batches(context, "observations", observations))
+        if len(resolved) <= 1:
+            return evaluate(resolved[0] if resolved else {**context, "observations": []}, combine_instructions)
+
+        # Reconcile each criterion with the other evidence for that criterion before any further reduction.
+        result = []
+        for criterion in context["criteria"]:
+            item_id = criterion["id"]
+            scoped = {**context, "criteria": [criterion]}
+            scoped_payload = json.loads(json.dumps(payload))
+            properties = scoped_payload["text"]["format"]["schema"]["properties"]["items"]["items"]["properties"]
+            properties["id"]["enum"] = [item_id]
+            facts = [record for record in observations if record["id"] == item_id]
+            facts_by_subject = {}
+            for fact in facts:
+                facts_by_subject.setdefault(fact["subject"], []).append(fact)
+            conflicts = list(evidence_batches(scoped, "observations", facts_by_subject.values()))
+            if len(conflicts) <= 1:
+                result.extend(evaluate(conflicts[0] if conflicts else {**scoped, "observations": []},
+                                       combine_instructions, scoped_payload))
+                continue
+            reviews = list(executor.map(lambda batch: evaluate(batch, combine_instructions, scoped_payload), conflicts))
+            priority = {"missing": 0, "needs_review": 1, "met": 2}
+            result.append(min((items[0] for items in reviews), key=lambda item: priority[item["status"]]))
+        return result
 
 
 def evidence_file(path, ref, *, limit=24_000, source_required=False):
