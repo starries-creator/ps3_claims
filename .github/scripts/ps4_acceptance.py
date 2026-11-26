@@ -243,7 +243,9 @@ def review_submission(payload, evidence):
         "deletions from the same file, before deciding if a name is new. Retain each reported violation and "
         "any evidence that supports or refutes it in intermediate passes. In the final verdict, report confirmed "
         "violations unless another observation specifically disproves them. A passing observation that covers "
-        "a different part of the submission does not disprove a violation."
+        "a different part of the submission does not disprove a violation. When given subject_verdicts, "
+        "treat them as partial observations. A runner call and its implementation may appear under different "
+        "subjects: check them together before reaching a verdict. Keep the relevant paths in each conclusion."
     )
 
     batches = list(evidence_batches(context, "records", evidence_records(evidence)))
@@ -336,11 +338,7 @@ def reconcile_in_order(context, batches, payload, instructions, evaluate):
         parts = [decide(facts[:midpoint]), decide(facts[midpoint:])]
         return evaluate({**context, "subject_verdicts": parts}, instructions, payload)[0]
 
-    outcomes = [decide(facts) for facts in by_subject.values()]
-    # Keep source subjects distinct and preserve the outcome of each model call.
-    violation = next((item for item in outcomes if item["status"] == "missing"), None)
-    if violation:
-        return violation
+    outcomes = [{**decide(facts), "subject": subject} for subject, facts in by_subject.items()]
     return combine_subject_verdicts(context, outcomes, payload, instructions, evaluate)
 
 

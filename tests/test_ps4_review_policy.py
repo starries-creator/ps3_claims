@@ -222,6 +222,19 @@ def test_oversized_evidence_combines_late_findings_automatically(monkeypatch):
     monkeypatch.setattr(acceptance, "review_evidence", review_without_compression)
     assert acceptance.review_submission(request, evidence)[0]["status"] == "met"
 
+    def review_related_subjects(data, _instructions, _payload):
+        if "subject_verdicts" in data:
+            assert {item["subject"] for item in data["subject_verdicts"]} == {"runner", "model"}
+            return [{"id": "PS4-S3", "status": "met", "evidence": "Runner calls the separate model."}]
+        subject = data["observations"][0]["subject"]
+        return [{"id": "PS4-S3", "status": "missing" if subject == "runner" else "met", "evidence": subject}]
+
+    facts = [{"subject": "runner", "fact": "Calls the model."}, {"subject": "model", "fact": "Implements the exercise."}]
+    combined = acceptance.reconcile_in_order(
+        {"criteria": [{"id": "PS4-S3"}]}, [{"observations": facts}], request, "", review_related_subjects,
+    )
+    assert combined["status"] == "met"
+
 
 def test_long_patch_lines_keep_their_diff_direction(monkeypatch):
     scripts = Path(__file__).resolve().parents[1] / ".github" / "scripts"
