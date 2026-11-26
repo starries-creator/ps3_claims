@@ -135,7 +135,6 @@ python -m analyses.ps3_script ps4-ex2 --data data/ps4_claims.parquet --results-d
 ```
 
 The report must match the current dataset and fixed sample split. The learning curve uses one-based boosting rounds, consistent with the saved evaluation history and reported iteration numbers.
-```
 
 ### Results
 
@@ -160,3 +159,24 @@ The original 300 estimators were retained because they were selected through tra
 - [Evaluation history and metrics](results/learning_curve_metrics.json)
 - [Results and interpretation](results/learning_curve_notes.md)
 - [Unit tests](tests/test_learning_curve.py)
+
+## PS4 — Exercise 5: Shapley decompositions
+
+Run from the repository root in the [shared `ps3` environment](PS4_SETUP.md):
+
+```bash
+python -m analyses.ps3_script ps4-ex5 --data data/ps4_claims.parquet --results-dir results
+```
+
+The [analysis](analyses/shapley_decomposition.py) refits the initial Tweedie GLM and the constrained LightGBM on the same fixed training split, with `PurePremium = ClaimAmountCut / Exposure` as the target and `Exposure` as the training weight. It checks the split against the Exercise 1 report and reuses its selected LightGBM parameters and increasing `BonusMalus` constraint without repeating cross-validation. When writing to a separate directory, pass `--ex1-metrics-path results/ps4_ex1_monotonicity_metrics.json` to use the committed report.
+
+Both DALEX explainers use the same 1,000 training policies sampled with seed 42. They evaluate the first test policy (`IDpol=13`) with `predict_parts(type="shap")`, averaging over 25 feature orderings with the same seed. The [interactive plot](results/ps4_ex5_shapley.html) shows both decompositions on a common scale (download the HTML and open it in a browser with internet access). The [JSON summary](results/ps4_ex5_shapley.json) contains the full numerical results.
+
+| Model | Background baseline | Sum of SHAP contributions | Predicted pure premium |
+| --- | ---: | ---: | ---: |
+| Initial GLM | 146.09 | −60.19 | 85.89 |
+| Constrained LightGBM | 129.59 | −39.58 | 90.00 |
+
+The baseline is each model's unweighted mean prediction on the shared background, not the observed mean or the GLM intercept. The models can therefore have different baselines even though the background policies are identical. LightGBM starts about 16.50 lower but makes a net downward adjustment about 20.61 smaller than the GLM's, leaving its final prediction only 4.11 higher.
+
+For this policy, the largest differences are in `Area` and `Density`. `Area=E` contributes +20.23 in the GLM but only +3.77 in LightGBM; `Density=3003` contributes +0.58 and +10.66, respectively. `BonusMalus=50` is the largest downward contribution in both models (−48.71 versus −39.19), and `Region=R31` and `VehBrand=B12` also pull the GLM prediction down more strongly. All nine contributions have the same sign in both models; their magnitudes differ. The GLM uses terms that are additive on the log scale, whereas tree splits can represent thresholds and interactions. This helps explain why the same feature values can change the two models' predictions by different amounts, but the SHAP results alone do not identify which split or interaction caused a difference. These are local attributions on the pure-premium scale, not GLM coefficients or evidence of global feature importance.

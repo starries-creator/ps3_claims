@@ -126,6 +126,17 @@ def run_ps4_ex2(frame, results_dir, ex1_metrics_path=None):
 
     return metrics
 
+
+# %% PS4 Exercise 5 — Shapley decompositions
+
+def run_ps4_ex5(frame, results_dir, ex1_metrics_path=None):
+    from analyses.shapley_decomposition import run_shapley_decomposition
+
+    summary = run_shapley_decomposition(frame, results_dir, ex1_metrics_path)
+    print(f"Saved SHAP plot and summary for policy {summary['policy_id']} in {results_dir}")
+    return summary
+
+
 # %% Shared report and command-line support
 
 def save_run(metrics, test_predictions, results_dir):
@@ -187,6 +198,7 @@ def main(argv=None):
     ps4_sections = {
         "ps4-ex1": run_ps4_ex1,
         "ps4-ex2": run_ps4_ex2,
+        "ps4-ex5": run_ps4_ex5,
     }
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -206,7 +218,7 @@ def main(argv=None):
         type=Path,
         default=None,
         help=(
-            "Exercise 1 metrics JSON for PS4 Exercise 2. "
+            "Exercise 1 metrics JSON for PS4 Exercises 2 and 5. "
             "Defaults to ps4_ex1_monotonicity_metrics.json "
             "inside --results-dir."
         ),
@@ -244,8 +256,8 @@ def main(argv=None):
         print(f"Validated {len(frame):,} policies ({len(train):,} train; {len(test):,} test)")
         return
     if args.action in ps4_sections:
-        if args.action == "ps4-ex2":
-            run_ps4_ex2(
+        if args.action in {"ps4-ex2", "ps4-ex5"}:
+            ps4_sections[args.action](
                 frame,
                 args.results_dir,
                 ex1_metrics_path=args.ex1_metrics_path,
