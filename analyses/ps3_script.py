@@ -113,6 +113,13 @@ def run_ps4_ex1(frame, results_dir):
     print(json.dumps(metrics, indent=2, allow_nan=False))
     return metrics
 
+# %% PS4 Exercise 2 — Learning curve
+
+def run_ps4_ex2(frame, results_dir):
+    from analyses.learning_curve import run_learning_curve
+
+    _, metrics = run_learning_curve(frame, results_dir)
+    return metrics
 
 # %% Shared report and command-line support
 
@@ -172,7 +179,10 @@ def main(argv=None):
         "tuned-lightgbm": save_tuned_lightgbm,
         "compare": save_ranking_comparison,
     }
-    ps4_sections = {"ps4-ex1": run_ps4_ex1}
+    ps4_sections = {
+        "ps4-ex1": run_ps4_ex1,
+        "ps4-ex2": run_ps4_ex2,
+    }
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "action",
