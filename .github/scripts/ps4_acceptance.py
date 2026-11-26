@@ -25,6 +25,10 @@ SUBMISSION_RULES = {"PS4-S3", "PS4-S4"}
 RUBRIC_INPUT_BUDGET = 180_000  # UTF-8 bytes reserved for the serialized evidence
 
 
+class RubricOutputLimit(RuntimeError):
+    """The model exhausted its output budget before returning the checklist."""
+
+
 def load_rubric():
     rubric = json.loads(RUBRIC.read_text(encoding="utf-8"))
     assert set(rubric["exercises"]) == set("12345")
@@ -199,9 +203,26 @@ def review_submission(payload, evidence):
             raise RuntimeError("A rubric review response did not return each requirement exactly once.")
         return items
 
+    def scan(batch, request, instructions, field):
+        try:
+            return evaluate(batch, instructions, request)
+        except RubricOutputLimit:
+            records = batch[field]
+            if len(records) <= 1:
+                raise
+            midpoint = len(records) // 2
+            left = scan({**batch, field: records[:midpoint]}, request, instructions, field)
+            right = scan({**batch, field: records[midpoint:]}, request, instructions, field)
+            by_id = {item["id"]: item for item in right}
+            return [{**item, "observations": item["observations"] + by_id[item["id"]]["observations"]}
+                    for item in left]
+
     encoded = encode_evidence(evidence)
     if len(encoded.encode("utf-8")) <= RUBRIC_INPUT_BUDGET:
-        return evaluate(evidence)
+        try:
+            return evaluate(evidence)
+        except RubricOutputLimit:
+            print("Retrying PS4 rubric review in batches after an incomplete model response.")
 
     context = {key: evidence[key] for key in (
         "criteria", "title", "assignment_source", "exercise_sources", "earlier_review_sources",
@@ -226,7 +247,7 @@ def review_submission(payload, evidence):
     )
 
     batches = list(evidence_batches(context, "records", evidence_records(evidence)))
-    print(f"Reviewing oversized PS4 evidence automatically in {len(batches)} batches.")
+    print(f"Reviewing PS4 evidence automatically in {len(batches)} batches.")
     batch_payload = json.loads(json.dumps(payload))
     item_schema = batch_payload["text"]["format"]["schema"]["properties"]["items"]["items"]
     item_schema["properties"]["observations"] = {"type": "array", "items": {
@@ -237,7 +258,7 @@ def review_submission(payload, evidence):
 
     with ThreadPoolExecutor(max_workers=3) as executor:
         groups = list(executor.map(
-            lambda batch: evaluate(batch, batch_instructions, batch_payload), batches,
+            lambda batch: scan(batch, batch_payload, batch_instructions, "records"), batches,
         ))
         observations = list({(item["id"], entry["subject"], entry["fact"]): {"id": item["id"], **entry}
                              for group in groups for item in group for entry in item["observations"]}.values())
@@ -272,15 +293,36 @@ def review_submission(payload, evidence):
                     "all distinct potential violations, counterevidence and facts needed by other batches. "
                     "Remove redundant observations and use brief evidence quotes."
                 )
-                reviews = list(executor.map(
-                    lambda batch: evaluate(batch, consolidate, scoped_batch_payload), conflicts,
-                ))
+                reviews = list(executor.map(lambda batch: scan(
+                    batch, scoped_batch_payload, consolidate, "observations",
+                ), conflicts))
                 reduced = list({(entry["subject"], entry["fact"]): {"id": item_id, **entry}
                                 for items in reviews for entry in items[0]["observations"]}.values())
                 if len(encode_evidence(reduced).encode("utf-8")) >= len(encode_evidence(facts).encode("utf-8")):
-                    raise RuntimeError(f"The model could not consolidate the observations for {item_id}.")
+                    result.append(reconcile_in_order(scoped, conflicts, scoped_payload, combine_instructions, evaluate))
+                    break
                 facts = reduced
         return result
+
+
+def reconcile_in_order(context, batches, payload, instructions, evaluate):
+    """Fold compact conclusions across shards when the raw facts cannot be compressed further."""
+    state = None
+    for batch in batches:
+        extra = " Reconcile this shard with the prior conclusion. Keep unresolved conflicts and missing evidence visible."
+        if state is not None:
+            # Reserve space without dropping evidence from the next shard.
+            state_context = {**context, "prior_conclusion": state}
+            parts = evidence_batches(state_context, "observations", batch["observations"])
+        else:
+            parts = [batch]
+        for part in parts:
+            incoming = {**part, "prior_conclusion": state}
+            if len(encode_evidence(incoming).encode("utf-8")) > RUBRIC_INPUT_BUDGET:
+                incoming = part
+            state = evaluate(incoming, instructions + extra + " Limit the conclusion to 500 characters.", payload)[0]
+            state = {**state, "evidence": state["evidence"][:500]}
+    return state
 
 
 def evidence_file(path, ref, *, limit=24_000, source_required=False):
@@ -410,6 +452,9 @@ def assess(rubric, exercises, pr, ref, submitted_files):
 
 def review_evidence(payload):
     response = request_json("OpenAI", "https://api.openai.com/v1/responses", os.environ["OPENAI_API_KEY"], payload)
+    if (response.get("status") == "incomplete"
+            and (response.get("incomplete_details") or {}).get("reason") == "max_output_tokens"):
+        raise RubricOutputLimit("The model ran out of output tokens for a rubric response.")
     if response.get("status") != "completed":
         raise RuntimeError("OpenAI did not complete the PS4 rubric review.")
     result = next(

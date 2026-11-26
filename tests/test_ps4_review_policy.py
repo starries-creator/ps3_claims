@@ -191,6 +191,8 @@ def test_oversized_evidence_combines_late_findings_automatically(monkeypatch):
         data = json.loads(payload["input"])
         assert len(payload["input"].encode("utf-8")) <= budget
         if "records" in data:
+            if len(data["records"]) > 5:
+                raise acceptance.RubricOutputLimit("Output exhausted in test.")
             facts = [{"subject": "same file", "fact": str(record.get("offset")) + "x" * 100}
                      for record in data["records"] if record["kind"] == "PR description"]
         elif "This is an intermediate pass." in payload["instructions"]:
@@ -203,6 +205,21 @@ def test_oversized_evidence_combines_late_findings_automatically(monkeypatch):
                  "observations": facts}]
 
     monkeypatch.setattr(acceptance, "review_evidence", review_many_facts)
+    assert acceptance.review_submission(request, evidence)[0]["status"] == "met"
+
+    def review_without_compression(payload):
+        data = json.loads(payload["input"])
+        assert len(payload["input"].encode("utf-8")) <= budget
+        if "records" in data:
+            return review_many_facts(payload)
+        if "This is an intermediate pass." in payload["instructions"]:
+            facts = [{"subject": record["subject"], "fact": record["fact"]} for record in data["observations"]]
+            return [{"id": "PS4-S4", "status": "needs_review", "evidence": "Distinct facts.", "observations": facts}]
+        if data.get("prior_conclusion"):
+            assert data["prior_conclusion"]["evidence"] == "Earlier evidence considered."
+        return [{"id": "PS4-S4", "status": "met", "evidence": "Earlier evidence considered."}]
+
+    monkeypatch.setattr(acceptance, "review_evidence", review_without_compression)
     assert acceptance.review_submission(request, evidence)[0]["status"] == "met"
 
 
