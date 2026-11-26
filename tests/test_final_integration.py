@@ -148,3 +148,34 @@ def test_cli_bounds_remote_read_and_restores_socket_timeout(monkeypatch):
     ps3_script.main(["check-data", "--network-timeout", "300"])
     assert seen == [300.]
     assert socket.getdefaulttimeout() == original
+
+
+def test_cli_runs_ps3_sections_in_assignment_order(tmp_path, monkeypatch):
+    frame = object()
+    outputs = tmp_path / "results"
+    stages = (
+        "save_tweedie_benchmark",
+        "save_parametric_glm",
+        "save_initial_lightgbm",
+        "save_tuned_lightgbm",
+        "save_ranking_comparison",
+    )
+    calls = []
+    monkeypatch.setattr(ps3_script, "load_input_data", lambda *_: frame)
+    monkeypatch.setattr(ps3_script, "run_provenance", lambda _: ("dataset", {}))
+
+    def record(stage):
+        def run(data, results_dir, verification):
+            assert data is frame
+            assert results_dir == outputs
+            assert verification == {"data_fingerprint": "dataset", "run_provenance": {}}
+            calls.append(stage)
+        return run
+
+    for stage in stages:
+        monkeypatch.setattr(ps3_script, stage, record(stage))
+
+    ps3_script.main(["all", "--results-dir", str(outputs)])
+
+    assert outputs.is_dir()
+    assert calls == list(stages)
