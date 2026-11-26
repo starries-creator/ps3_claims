@@ -201,6 +201,10 @@ def review_submission(payload, evidence):
                                  "instructions": request["instructions"] + extra_instructions})
         if sorted(item["id"] for item in items) != expected_ids:
             raise RuntimeError("A rubric review response did not return each requirement exactly once.")
+        for item in items:
+            if "observations" in item and item["status"] == "missing" and item["evidence"].strip():
+                # Preserve the stated violation even if the model put it only in the verdict.
+                item["observations"].append({"subject": "Batch finding", "fact": item["evidence"]})
         return items
 
     def scan(batch, request, instructions, field):

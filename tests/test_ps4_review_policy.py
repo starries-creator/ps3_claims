@@ -178,6 +178,15 @@ def test_oversized_evidence_combines_late_findings_automatically(monkeypatch):
     assert any("observations" in request for request in requests)
     assert items == [{"id": "PS4-S4", "status": "missing", "evidence": label}]
 
+    def review_with_verdict_only(payload):
+        data = json.loads(payload["input"])
+        if "records" in data and any(label in (record.get("text") or "") for record in data["records"]):
+            return [{"id": "PS4-S4", "status": "missing", "evidence": label, "observations": []}]
+        return review(payload)
+
+    monkeypatch.setattr(acceptance, "review_evidence", review_with_verdict_only)
+    assert acceptance.review_submission(request, evidence)[0]["status"] == "missing"
+
     def omit_requirement(payload):
         if any(label in (record.get("text") or "") for record in json.loads(payload["input"])["records"]):
             return []
