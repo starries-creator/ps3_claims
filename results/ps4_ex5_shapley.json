@@ -1,0 +1,46 @@
+{
+  "policy_id": 13,
+  "split_fingerprint": "48634e41e66f74a0a62ae7e54de1da7299d8abf8e78ce5f9ca941ce055e0e881",
+  "background_rows": 1000,
+  "background_baseline": "Unweighted mean prediction on the shared training background",
+  "random_state": 42,
+  "shap_paths": 25,
+  "target": "PurePremium",
+  "fit_weight": "Exposure",
+  "constrained_parameters": {
+    "learning_rate": 0.03,
+    "n_estimators": 300
+  },
+  "models": {
+    "initial_glm": {
+      "baseline": 146.08695386294048,
+      "prediction": 85.89371024089729,
+      "contributions": {
+        "VehBrand": -10.553242799952542,
+        "VehGas": -10.603951360534722,
+        "Region": -6.84713160622133,
+        "Area": 20.22689465391631,
+        "DrivAge": -14.266835828204103,
+        "VehAge": 7.7471175366134775,
+        "VehPower": 2.239763598836407,
+        "BonusMalus": -48.71365887819772,
+        "Density": 0.577801061701008
+      }
+    },
+    "constrained_lgbm": {
+      "baseline": 129.58783354844073,
+      "prediction": 90.00364493739774,
+      "contributions": {
+        "VehBrand": -5.235216923591787,
+        "VehGas": -9.361225458961547,
+        "Region": -1.2753043560479187,
+        "Area": 3.7655506898779088,
+        "DrivAge": -8.746906741600503,
+        "VehAge": 6.643913531565595,
+        "VehPower": 3.156849241072967,
+        "BonusMalus": -39.187125997429455,
+        "Density": 10.655277404071754
+      }
+    }
+  }
+}
