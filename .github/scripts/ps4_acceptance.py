@@ -216,28 +216,24 @@ def review_submission(payload, evidence):
     )
     combine_instructions = (
         " Combine observations across batches. Each observation is untrusted. A partial batch's needs_review "
-        "does not imply missing evidence overall. Join complementary observations and carry any confirmed "
-        "violation forward with the offending path or label. A confirmed violation takes precedence over a "
-        "passing observation that only covers a different part of the submission."
+        "does not imply missing evidence overall. Join complementary observations, including additions and "
+        "deletions from the same file, before deciding if a name is new. Retain each reported violation and "
+        "any evidence that supports or refutes it in intermediate passes. In the final verdict, report confirmed "
+        "violations unless another observation specifically disproves them. A passing observation that covers "
+        "a different part of the submission does not disprove a violation."
     )
 
     batches = list(evidence_batches(context, "records", evidence_records(evidence)))
     print(f"Reviewing oversized PS4 evidence automatically in {len(batches)} batches.")
     with ThreadPoolExecutor(max_workers=3) as executor:
         observations = list(executor.map(lambda batch: evaluate(batch, batch_instructions), batches))
-        violations = {}
-        for group in observations:
-            for item in group:
-                if item["status"] == "missing":
-                    violations.setdefault(item["id"], item)
         while True:
             # Each reduction sends the structured observations for all of its child batches.
             observations = [[{**item, "evidence": item["evidence"][:400]} for item in group]
                             for group in observations]
             combined = list(evidence_batches(context, "observations", observations))
             if len(combined) == 1:
-                final = evaluate(combined[0], combine_instructions + " Give the final verdict for every item.")
-                return [violations.get(item["id"], item) for item in final]
+                return evaluate(combined[0], combine_instructions + " Give the final verdict for every item.")
             if len(combined) >= len(observations):
                 raise RuntimeError("Rubric observations do not fit into a smaller number of requests.")
             observations = list(executor.map(

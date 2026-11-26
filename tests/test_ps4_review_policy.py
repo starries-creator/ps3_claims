@@ -157,8 +157,8 @@ def test_oversized_evidence_combines_late_findings_automatically(monkeypatch):
         data = json.loads(payload["input"])
         requests.append(data)
         if "observations" in data:
-            assert any(group[0]["status"] == "missing" for group in data["observations"])
-            return [{"id": "PS4-S4", "status": "met", "evidence": "Reducer missed the label."}]
+            assert "unless another observation specifically disproves them" in payload["instructions"]
+            return next(group for group in data["observations"] if group[0]["status"] == "missing")
         texts = [record.get("text") or "" for record in data["records"]]
         return [{"id": "PS4-S4", "status": "missing" if any(label in text for text in texts) else "met",
                  "evidence": label if any(label in text for text in texts) else "Descriptive name shown."}]
