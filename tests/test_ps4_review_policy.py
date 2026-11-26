@@ -187,6 +187,24 @@ def test_oversized_evidence_combines_late_findings_automatically(monkeypatch):
     with pytest.raises(RuntimeError, match="each requirement exactly once"):
         acceptance.review_submission(request, evidence)
 
+    def review_many_facts(payload):
+        data = json.loads(payload["input"])
+        assert len(payload["input"].encode("utf-8")) <= budget
+        if "records" in data:
+            facts = [{"subject": "same file", "fact": str(record.get("offset")) + "x" * 100}
+                     for record in data["records"] if record["kind"] == "PR description"]
+        elif "This is an intermediate pass." in payload["instructions"]:
+            facts = [{"subject": "same file", "fact": "Complementary evidence from this shard."}]
+        else:
+            assert data["observations"] == [{"id": "PS4-S4", "subject": "same file",
+                                              "fact": "Complementary evidence from this shard."}]
+            return [{"id": "PS4-S4", "status": "met", "evidence": "Evidence reconciled."}]
+        return [{"id": "PS4-S4", "status": "needs_review", "evidence": "Partial evidence.",
+                 "observations": facts}]
+
+    monkeypatch.setattr(acceptance, "review_evidence", review_many_facts)
+    assert acceptance.review_submission(request, evidence)[0]["status"] == "met"
+
 
 def test_long_patch_lines_keep_their_diff_direction(monkeypatch):
     scripts = Path(__file__).resolve().parents[1] / ".github" / "scripts"

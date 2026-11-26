@@ -245,7 +245,7 @@ def review_submission(payload, evidence):
         if len(resolved) <= 1:
             return evaluate(resolved[0] if resolved else {**context, "observations": []}, combine_instructions)
 
-        # Reconcile each criterion with the other evidence for that criterion before any further reduction.
+        # Reconcile supporting and conflicting facts before assigning a verdict to a criterion.
         result = []
         for criterion in context["criteria"]:
             item_id = criterion["id"]
@@ -253,18 +253,33 @@ def review_submission(payload, evidence):
             scoped_payload = json.loads(json.dumps(payload))
             properties = scoped_payload["text"]["format"]["schema"]["properties"]["items"]["items"]["properties"]
             properties["id"]["enum"] = [item_id]
-            facts = [record for record in observations if record["id"] == item_id]
+            scoped_batch_payload = json.loads(json.dumps(batch_payload))
+            properties = scoped_batch_payload["text"]["format"]["schema"]["properties"]["items"]["items"]["properties"]
+            properties["id"]["enum"] = [item_id]
             facts_by_subject = {}
-            for fact in facts:
-                facts_by_subject.setdefault(fact["subject"], []).append(fact)
-            conflicts = list(evidence_batches(scoped, "observations", facts_by_subject.values()))
-            if len(conflicts) <= 1:
-                result.extend(evaluate(conflicts[0] if conflicts else {**scoped, "observations": []},
-                                       combine_instructions, scoped_payload))
-                continue
-            reviews = list(executor.map(lambda batch: evaluate(batch, combine_instructions, scoped_payload), conflicts))
-            priority = {"missing": 0, "needs_review": 1, "met": 2}
-            result.append(min((items[0] for items in reviews), key=lambda item: priority[item["status"]]))
+            for fact in observations:
+                if fact["id"] == item_id:
+                    facts_by_subject.setdefault(fact["subject"], []).append(fact)
+            facts = [fact for related in facts_by_subject.values() for fact in related]
+            while True:
+                conflicts = list(evidence_batches(scoped, "observations", facts))
+                if len(conflicts) <= 1:
+                    final = conflicts[0] if conflicts else {**scoped, "observations": []}
+                    result.extend(evaluate(final, combine_instructions, scoped_payload))
+                    break
+                consolidate = combine_instructions + (
+                    " This is an intermediate pass. Return observations, retaining shared subject keys and "
+                    "all distinct potential violations, counterevidence and facts needed by other batches. "
+                    "Remove redundant observations and use brief evidence quotes."
+                )
+                reviews = list(executor.map(
+                    lambda batch: evaluate(batch, consolidate, scoped_batch_payload), conflicts,
+                ))
+                reduced = list({(entry["subject"], entry["fact"]): {"id": item_id, **entry}
+                                for items in reviews for entry in items[0]["observations"]}.values())
+                if len(encode_evidence(reduced).encode("utf-8")) >= len(encode_evidence(facts).encode("utf-8")):
+                    raise RuntimeError(f"The model could not consolidate the observations for {item_id}.")
+                facts = reduced
         return result
 
 
