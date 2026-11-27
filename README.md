@@ -160,6 +160,18 @@ The original 300 estimators were retained because they were selected through tra
 - [Results and interpretation](results/learning_curve_notes.md)
 - [Unit tests](tests/test_learning_curve.py)
 
+## PS4 — Exercise 4: Partial dependence plots
+
+From the repository root in the [shared `ps3` environment](PS4_SETUP.md):
+
+```bash
+python -m analyses.ps3_script ps4-ex4 --data data/ps4_claims.parquet --results-dir data/ps4_ex4 --ex1-metrics-path results/ps4_ex1_monotonicity_metrics.json
+```
+
+Without `--ex1-metrics-path`, the command looks for the Ex1 report inside `--results-dir`. The [PDP analysis](analyses/pdp_comparison.py) refits both Ex1 LightGBM pipelines without repeating cross-validation. It uses a shared sample of 100 training policies and shared feature grids to compute DALEX partial dependence for all nine features. The command writes interactive HTML plots, the profile CSVs, and the settings JSON. The checked-in [numeric](figures/ps4_ex4_pdp/numeric_pdp.png) and [categorical](figures/ps4_ex4_pdp/categorical_pdp.png) PNGs are snapshots of the comparison.
+
+On the 21-point `BonusMalus` grid, the constrained profile never decreases, while the unconstrained profile has ten decreases. The `Density` profiles are comparatively close. These are model averages over the sampled background, not causal effects.
+
 ## PS4 — Exercise 5: Shapley decompositions
 
 Run from the repository root in the [shared `ps3` environment](PS4_SETUP.md):

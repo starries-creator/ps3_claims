@@ -127,6 +127,16 @@ def run_ps4_ex2(frame, results_dir, ex1_metrics_path=None):
     return metrics
 
 
+# %% PS4 Exercise 4 — Partial dependence plots
+
+def run_ps4_ex4(frame, results_dir, ex1_metrics_path=None):
+    from analyses.pdp_comparison import run_pdp_comparison
+
+    if ex1_metrics_path is None:
+        ex1_metrics_path = results_dir / "ps4_ex1_monotonicity_metrics.json"
+    run_pdp_comparison(frame, results_dir, ex1_metrics_path)
+
+
 # %% PS4 Exercise 5 — Shapley decompositions
 
 def run_ps4_ex5(frame, results_dir, ex1_metrics_path=None):
@@ -198,6 +208,7 @@ def main(argv=None):
     ps4_sections = {
         "ps4-ex1": run_ps4_ex1,
         "ps4-ex2": run_ps4_ex2,
+        "ps4-ex4": run_ps4_ex4,
         "ps4-ex5": run_ps4_ex5,
     }
     parser = argparse.ArgumentParser(description=__doc__)
@@ -218,7 +229,7 @@ def main(argv=None):
         type=Path,
         default=None,
         help=(
-            "Exercise 1 metrics JSON for PS4 Exercises 2 and 5. "
+            "Exercise 1 metrics JSON for PS4 Exercises 2, 4 and 5. "
             "Defaults to ps4_ex1_monotonicity_metrics.json "
             "inside --results-dir."
         ),
@@ -256,7 +267,7 @@ def main(argv=None):
         print(f"Validated {len(frame):,} policies ({len(train):,} train; {len(test):,} test)")
         return
     if args.action in ps4_sections:
-        if args.action in {"ps4-ex2", "ps4-ex5"}:
+        if args.action in {"ps4-ex2", "ps4-ex4", "ps4-ex5"}:
             ps4_sections[args.action](
                 frame,
                 args.results_dir,
