@@ -38,19 +38,22 @@ RANDOM_STATE = 42
 NUMERIC_GRID_POINTS = 21
 
 
-def run_pdp_comparison() -> None:
-    """Compare constrained and unconstrained LightGBM PDPs."""
-
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+def run_pdp_comparison(
+    frame: pd.DataFrame | None = None,
+    output_dir: str | Path = OUTPUT_DIR,
+    ex1_metrics_path: str | Path = METRICS_PATH,
+) -> None:
+    """Compare both models on a prepared frame, or load the standalone cache."""
+    output_dir = Path(output_dir)
 
     # --------------------------------------------------
     # 2. Load canonical data
     # --------------------------------------------------
 
-    print("Loading canonical PS4 data...", flush=True)
-
-    raw = pd.read_parquet(DATA_PATH)
-    data = prepare_model_data(raw)
+    if frame is None:
+        print("Loading canonical PS4 data...", flush=True)
+        frame = prepare_model_data(pd.read_parquet(DATA_PATH))
+    data = frame
 
     train = data.loc[data["sample"] == "train"].copy()
     test = data.loc[data["sample"] == "test"].copy()
@@ -62,7 +65,7 @@ def run_pdp_comparison() -> None:
     fingerprint = policy_split_fingerprint(data)
 
     handoff = json.loads(
-        METRICS_PATH.read_text(encoding="utf-8")
+        Path(ex1_metrics_path).read_text(encoding="utf-8")
     )
 
     if fingerprint != handoff["split_fingerprint"]:
@@ -264,6 +267,7 @@ def run_pdp_comparison() -> None:
         ),
     ]
 
+    output_dir.mkdir(parents=True, exist_ok=True)
     for group_name, variables, variable_type in profile_groups:
 
         shared_grids = {
@@ -301,7 +305,7 @@ def run_pdp_comparison() -> None:
         )
 
         csv_path = (
-            OUTPUT_DIR / f"{group_name}_pdp_values.csv"
+            output_dir / f"{group_name}_pdp_values.csv"
         )
 
         comparison.to_csv(
@@ -320,7 +324,7 @@ def run_pdp_comparison() -> None:
         )
 
         html_path = (
-            OUTPUT_DIR / f"{group_name}_pdp.html"
+            output_dir / f"{group_name}_pdp.html"
         )
 
         figure.write_html(
@@ -358,7 +362,7 @@ def run_pdp_comparison() -> None:
         "feature_grids": grids,
     }
 
-    settings_path = OUTPUT_DIR / "pdp_settings.json"
+    settings_path = output_dir / "pdp_settings.json"
 
     settings_path.write_text(
         json.dumps(
@@ -370,7 +374,7 @@ def run_pdp_comparison() -> None:
     )
 
     print("PDP analysis complete.", flush=True)
-    print("Results saved in:", OUTPUT_DIR, flush=True)
+    print("Results saved in:", output_dir, flush=True)
 
 
 if __name__ == "__main__":
