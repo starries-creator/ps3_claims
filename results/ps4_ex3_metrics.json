@@ -1,0 +1,89 @@
+{
+  "exercise": "PS4 Ex3 - Evaluation metrics",
+  "split_fingerprint": "48634e41e66f74a0a62ae7e54de1da7299d8abf8e78ce5f9ca941ce055e0e881",
+  "training_rows": 542286,
+  "test_rows": 135727,
+  "target": "PurePremium",
+  "target_definition": "ClaimAmountCut / Exposure",
+  "weight": "Exposure",
+  "tweedie_power": 1.5,
+  "prediction_source": "Refitted Ex1 pipelines on full canonical training sample with locked parameters; no CV",
+  "prediction_alignment": "unique, nonmissing IDpol; exact test ID set; reindexed by IDpol",
+  "model_parameters": {
+    "unconstrained": {
+      "objective": "tweedie",
+      "tweedie_variance_power": 1.5,
+      "n_estimators": 300,
+      "learning_rate": 0.03,
+      "num_leaves": 31,
+      "max_depth": -1,
+      "min_child_samples": 20,
+      "colsample_bytree": 0.9,
+      "reg_lambda": 0.0,
+      "random_state": 42,
+      "n_jobs": -1,
+      "verbosity": -1
+    },
+    "constrained": {
+      "objective": "tweedie",
+      "tweedie_variance_power": 1.5,
+      "n_estimators": 300,
+      "learning_rate": 0.03,
+      "num_leaves": 31,
+      "max_depth": -1,
+      "min_child_samples": 20,
+      "colsample_bytree": 0.9,
+      "reg_lambda": 0.0,
+      "random_state": 42,
+      "n_jobs": -1,
+      "verbosity": -1
+    }
+  },
+  "constrained_feature": "BonusMalus (+1); all other transformed features 0",
+  "metric_definitions": {
+    "Bias": "sum(w*(prediction-actual))/sum(w*actual); positive means overprediction",
+    "Tweedie deviance": "sklearn weighted mean Tweedie deviance, power 1.5",
+    "MAE": "sum(w*abs(actual-prediction))/sum(w)",
+    "RMSE": "sqrt(sum(w*(actual-prediction)^2)/sum(w))",
+    "Gini": "PS3 unnormalized 1 - 2*AUC of claims Lorenz curve by policy count; tied predictions grouped"
+  },
+  "metrics": {
+    "unconstrained": {
+      "Bias": -0.14308414523168064,
+      "Tweedie deviance": 74.29163857609123,
+      "MAE": 242.5447950457416,
+      "RMSE": 3599.4267513595973,
+      "Gini": 0.2741965523390616
+    },
+    "constrained": {
+      "Bias": -0.12445095924166129,
+      "Tweedie deviance": 74.46945153029748,
+      "MAE": 245.6498030707868,
+      "RMSE": 3599.604824592442,
+      "Gini": 0.2720739632618072
+    }
+  },
+  "ex1_deviance_crosscheck": {
+    "unconstrained": {
+      "ex1": 74.29163857609124,
+      "recomputed": 74.29163857609123,
+      "difference": -1.4210854715202004e-14
+    },
+    "constrained": {
+      "ex1": 74.46945153029749,
+      "recomputed": 74.46945153029748,
+      "difference": -1.4210854715202004e-14
+    }
+  },
+  "deviance_tolerance": {
+    "relative": 1e-08,
+    "absolute": 1e-08
+  },
+  "versions": {
+    "numpy": "2.1.3",
+    "pandas": "2.3.3",
+    "scikit-learn": "1.9.1",
+    "lightgbm": "4.7.0"
+  },
+  "reproduction": "python -m analyses.ps3_script ps4-ex3 --data data/final_shared_normalized_20261120.parquet --results-dir results --ex1-metrics-path results/ps4_ex1_monotonicity_metrics.json"
+}
