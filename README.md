@@ -160,6 +160,51 @@ The original 300 estimators were retained because they were selected through tra
 - [Results and interpretation](results/learning_curve_notes.md)
 - [Unit tests](tests/test_learning_curve.py)
 
+## PS4 — Exercise 3: Evaluation metrics
+
+The public function compares actual and predicted nonnegative pure premiums using
+exposure weights. It returns a DataFrame indexed by metric name:
+
+```python
+from ps3.evaluation import evaluate_predictions
+metrics = evaluate_predictions(actual, predicted, sample_weight)
+```
+
+Relative bias is `sum(w * (predicted - actual)) / sum(w * actual)`; it is a
+fraction, and positive values indicate aggregate overprediction. Tweedie
+deviance (power 1.5), MAE, and RMSE are exposure-weighted means, with RMSE
+taking the square root after averaging squared errors. Inputs must be finite,
+actuals nonnegative, predictions positive, weights nonnegative with positive
+total, and the weighted actual total positive. Pandas Series indexes must match
+in order. The optional comparison Gini follows the PS3 policy-count Lorenz curve
+with tied predictions grouped; it is not a classification ROC statistic.
+
+Run with a local canonical cache and the committed Ex1 handoff:
+
+```bash
+python -m analyses.ps3_script ps4-ex3 \
+  --data data/final_shared_normalized_20261120.parquet \
+  --results-dir results \
+  --ex1-metrics-path results/ps4_ex1_monotonicity_metrics.json
+```
+
+A different cache prepared through `check-data` can be passed to `--data`.
+If an Ex1 prediction CSV is available beside the handoff, it is read; use
+`--predictions-path` to specify another file. Otherwise the two Ex1 pipelines
+are refitted with locked parameters on the training set, without CV. Predictions
+must cover precisely the test IDs and reproduce Ex1 test deviances to
+`rtol=atol=1e-8`; the CSV itself does not independently prove provenance. Data
+and per-policy predictions remain local. Results are in
+[`ps4_ex3_metrics.csv`](results/ps4_ex3_metrics.csv),
+[`ps4_ex3_metrics.json`](results/ps4_ex3_metrics.json), and
+[`ps4_ex3_notes.md`](results/ps4_ex3_notes.md). The standardized CSV can be
+used in team summaries without changing the existing PS3 comparison schema.
+
+On the canonical test sample, the unconstrained model has lower deviance,
+MAE and RMSE and a slightly higher Gini; the constrained model has smaller
+absolute aggregate bias. The constraint improves the interpretability of the
+BonusMalus response while trading off some predictive accuracy on this sample.
+
 ## PS4 — Exercise 4: Partial dependence plots
 
 From the repository root in the [shared `ps3` environment](PS4_SETUP.md):

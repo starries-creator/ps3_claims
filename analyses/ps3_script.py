@@ -127,6 +127,18 @@ def run_ps4_ex2(frame, results_dir, ex1_metrics_path=None):
     return metrics
 
 
+# %% PS4 Exercise 3 — Evaluation metrics
+
+def run_ps4_ex3(frame, results_dir, ex1_metrics_path=None, predictions_path=None):
+    from analyses.evaluation_metrics import run_evaluation_metrics
+
+    metrics, payload = run_evaluation_metrics(
+        frame, results_dir, ex1_metrics_path, predictions_path
+    )
+    print(metrics.to_string())
+    return payload
+
+
 # %% PS4 Exercise 4 — Partial dependence plots
 
 def run_ps4_ex4(frame, results_dir, ex1_metrics_path=None):
@@ -208,6 +220,7 @@ def main(argv=None):
     ps4_sections = {
         "ps4-ex1": run_ps4_ex1,
         "ps4-ex2": run_ps4_ex2,
+        "ps4-ex3": run_ps4_ex3,
         "ps4-ex4": run_ps4_ex4,
         "ps4-ex5": run_ps4_ex5,
     }
@@ -229,12 +242,16 @@ def main(argv=None):
         type=Path,
         default=None,
         help=(
-            "Exercise 1 metrics JSON for PS4 Exercises 2, 4 and 5. "
+            "Exercise 1 metrics JSON for PS4 Exercises 2, 3, 4 and 5. "
             "Defaults to ps4_ex1_monotonicity_metrics.json "
             "inside --results-dir."
         ),
     )
 
+    parser.add_argument(
+        "--predictions-path", type=Path, default=None,
+        help="Ex1 test predictions CSV for PS4 Ex3",
+    )
     parser.add_argument(
         "--data", type=Path,
         help="Explicit local prepared Parquet cache; otherwise use the instructor loader",
@@ -267,7 +284,11 @@ def main(argv=None):
         print(f"Validated {len(frame):,} policies ({len(train):,} train; {len(test):,} test)")
         return
     if args.action in ps4_sections:
-        if args.action in {"ps4-ex2", "ps4-ex4", "ps4-ex5"}:
+        if args.action == "ps4-ex3":
+            run_ps4_ex3(
+                frame, args.results_dir, args.ex1_metrics_path, args.predictions_path
+            )
+        elif args.action in {"ps4-ex2", "ps4-ex4", "ps4-ex5"}:
             ps4_sections[args.action](
                 frame,
                 args.results_dir,
