@@ -1,8 +1,16 @@
-# PS3 — Feature engineering and claims modelling
+# PS3 and PS4 — Motor claims modelling and interpretation
 
-This submission covers the fixed train/test split, the Winsorizer transformer and the motor claims model comparison. The [official problem set](https://languid-citipati-d0d.notion.site/PS-3-Feature-engineering-modelling-2ac32dea82c1814dad25e6d3c2af3b4e) gives the three exercise prompts.
+The submission starts at [`analyses/ps3_script.py`](analyses/ps3_script.py). The `# %%` cells follow the PS3 exercise order and mark the start of PS4. The repository contains the PS3 modelling results and the implementation and outputs for all five PS4 exercises. [PS3 handout](https://languid-citipati-d0d.notion.site/PS-3-Feature-engineering-modelling-2ac32dea82c1814dad25e6d3c2af3b4e) · [PS4 handout](https://languid-citipati-d0d.notion.site/PS-4-Model-evaluation-interpretability-2b632dea82c180fa939fdb4d836fe71d)
 
-## Install and run
+| PS4 exercise | Submitted results |
+| --- | --- |
+| [1. Monotonicity constraints](#ps4--exercise-1-monotonicity-constraints) | [BonusMalus plot](results/bonusmalus_weighted_claims.png), [model comparison](results/ps4_ex1_monotonicity_metrics.json) |
+| [2. Learning curve](#ps4--exercise-2-learning-curve) | [Curve](results/learning_curve.png), [interpretation](results/learning_curve_notes.md) |
+| [3. Evaluation metrics](#ps4--exercise-3-evaluation-metrics) | [Held-out metrics](results/ps4_ex3_metrics.csv), [interpretation](results/ps4_ex3_notes.md) |
+| [4. Partial dependence](#ps4--exercise-4-partial-dependence-plots) | [Numeric profiles](figures/ps4_ex4_pdp/numeric_pdp.png), [categorical profiles](figures/ps4_ex4_pdp/categorical_pdp.png) |
+| [5. Shapley decompositions](#ps4--exercise-5-shapley-decompositions) | [Interactive plot](results/ps4_ex5_shapley.html), [numerical breakdown](results/ps4_ex5_shapley.json) |
+
+## Reproduce the submission
 
 ```bash
 git clone https://github.com/starries-creator/ps3_claims.git
@@ -11,24 +19,22 @@ conda env create -f environment.yml
 conda activate ps3
 python -m pip install --no-build-isolation -e .
 python -m pytest
-python -m analyses.ps3_script all --save-data data/shared_final.parquet --results-dir data/reproduced
+python -m analyses.ps3_script check-data --save-data data/ps4_claims.parquet
+python -m analyses.ps3_script all --data data/ps4_claims.parquet --results-dir data/reproduced/ps3
+python -m analyses.ps3_script ps4-all --data data/ps4_claims.parquet --results-dir data/reproduced/ps4
 ```
 
-The last command loads the instructor's OpenML data, fits the four models and writes the comparison table and Lorenz figure to `data/reproduced/`. Once the cache exists, rerun using it as input.
+The `check-data` command downloads the instructor's OpenML data and saves a prepared cache. If the cache already exists, reuse it with `--data`. The `all` command runs the PS3 modelling sequence. The `ps4-all` command runs Exercises 1–5 in order and reuses the Exercise 1 report and, for Exercise 3, its matched predictions. The commands above put regenerated outputs in local directories. See [PS4 setup](PS4_SETUP.md) to run individual exercises using the committed Exercise 1 report.
 
-```bash
-python -m analyses.ps3_script all --data data/shared_final.parquet --results-dir data/reproduced
-```
-
-## Exercise 1 — Fixed train/test split
+## PS3 — Exercise 1: Fixed train/test split
 
 `create_sample_split` labels rows as `train` or `test` by hashing one or more normalized ID columns. A policy keeps its assignment when rows are shuffled or new policies are added. For this dataset, splitting on `IDpol` with a target training fraction of 80% gives **542,286 training policies** and **135,727 test policies**. [Implementation](ps3/data/_sample_split.py) · [Split tests](tests/data/test_sample_split.py) · [Exercise 1 PR](https://github.com/starries-creator/ps3_claims/pull/10)
 
-## Exercise 2 — Winsorizer
+## PS3 — Exercise 2: Winsorizer
 
 `Winsorizer.fit` learns the lower and upper quantile cutoffs from the training data. `transform` clips values to those same cutoffs when applied to new data. In the unit test, fitting the 25th and 75th percentiles on `[0, 10, 20, 30, 100]` gives cutoffs of 10 and 30. The transformer then clips `[-100, 50, 1000]` to `[10, 30, 30]`. [Implementation](ps3/preprocessing/_winsorizer.py) · [Transformer tests](tests/preprocessing/test_winsorizer.py) · [Exercise 2 PR](https://github.com/starries-creator/ps3_claims/pull/8)
 
-## Exercise 3 — Improve the model
+## PS3 — Exercise 3: Improve the model
 
 All four models use the instructor's data transformation and the same fixed split from Exercise 1. The table reports mean Exposure-weighted Tweedie deviance at power 1.5. Lower is better. [Combined results](results/metrics.csv) · [Data transformation](ps3/data/_load_transform.py) · [Evaluation code](analyses/claims_evaluation.py) · [Integrated runner](analyses/ps3_script.py)
 
@@ -59,30 +65,19 @@ Initial LightGBM used a learning rate of 0.05 and 300 estimators. Tuning compare
 
 Tuned LightGBM has the lowest test deviance and the highest observed Gini, with a small Gini improvement over initial LightGBM. Both GLMs predict portfolio totals within 1% of observed clipped test claims, while the initial and tuned LightGBM totals are about 17% and 14% below observed claims. Agreement on the total alone leaves calibration across risk groups open. [Full comparison and limitations](results/final_comparison.md) · [Test Lorenz curves](results/lorenz_comparison.png)
 
-## Repository map
-
-| Path | Contents |
-| --- | --- |
-| [`ps3/`](ps3/) | Data preparation, fixed split and preprocessing |
-| [`analyses/`](analyses/) | The [original exercise sequence](analyses/ps3_script.py) and separate model implementations |
-| [`tests/`](tests/) | Unit and integration tests |
-| [`results/`](results/) | Submitted metrics, figures and analysis notes |
-
-The original division of work is recorded in the [team assignments](TEAM_ASSIGNMENTS.md).
-
 ## PS4 — Exercise 1: monotonicity constraints
 
 See the [PS4 environment and data setup](PS4_SETUP.md) for Conda setup, the shared data cache, and validation commands.
 
 PS4 continues in this repository. The Ex1 implementation is in [`analyses/lgbm_monotonicity.py`](analyses/lgbm_monotonicity.py); it uses the PS3 fixed `IDpol` split, `ClaimAmountCut / Exposure` target, Exposure weights and Tweedie power 1.5. Three-fold shuffled KFold model selection is confined to the training sample. Each fold fits its own one-hot preprocessing, then the implementation resolves `BonusMalus` from the transformed feature names and applies the increasing constraint `+1` to that column. All remaining transformed columns receive constraint `0`.
 
-Run after the PS3 Conda environment is installed. By default this loads the instructor's data and creates the fixed split:
+To run Exercise 1 separately, use the prepared cache:
 
 ```bash
-python -m analyses.lgbm_monotonicity --results-dir results
+python -m analyses.ps3_script ps4-ex1 --data data/ps4_claims.parquet --results-dir data/ps4_ex1
 ```
 
-To reuse a local prepared Parquet cache, pass `--data data/shared_final.parquet`. Both entry points recalculate `PurePremium` from `ClaimAmountCut / Exposure` and recreate the `IDpol` split, so older caches with stale target or split columns still use the canonical prepared data. The integrated entry point is `python -m analyses.ps3_script ps4-ex1`; it can also take `--data data/shared_final.parquet`. The run writes:
+The shared runner recalculates `PurePremium` from `ClaimAmountCut / Exposure` and recreates the fixed `IDpol` split. The run produces the same artifacts as the submitted copies below:
 
 - `results/bonusmalus_weighted_claims.png` and its grouped CSV: training-only Exposure-weighted pure premium by observed `BonusMalus`.
 - `results/ps4_ex1_monotonicity_cv.json`: fold scores for constrained and unconstrained parameter candidates and each selected configuration.
@@ -115,24 +110,10 @@ The fixed IDpol split, training-fitted preprocessing, increasing BonusMalus cons
 Run Exercise 2 using the committed Exercise 1 report:
 
 ```bash
-python -m analyses.ps3_script ps4-ex2 --data data/ps4_claims.parquet --results-dir results
+python -m analyses.ps3_script ps4-ex2 --data data/ps4_claims.parquet --results-dir data/ps4_ex2 --ex1-metrics-path results/ps4_ex1_monotonicity_metrics.json
 ```
 
 By default, Exercise 2 reads `ps4_ex1_monotonicity_metrics.json` from the specified results directory.
-
-To reproduce both exercises using a separate results directory:
-
-```bash
-python -m analyses.ps3_script ps4-ex1 --data data/ps4_claims.parquet --results-dir data/custom_results
-
-python -m analyses.ps3_script ps4-ex2 --data data/ps4_claims.parquet --results-dir data/custom_results
-```
-
-Alternatively, an existing Exercise 1 report can be supplied explicitly:
-
-```bash
-python -m analyses.ps3_script ps4-ex2 --data data/ps4_claims.parquet --results-dir data/ex2_outputs --ex1-metrics-path results/ps4_ex1_monotonicity_metrics.json
-```
 
 The report must match the current dataset and fixed sample split. The learning curve uses one-based boosting rounds, consistent with the saved evaluation history and reported iteration numbers.
 
@@ -183,8 +164,8 @@ Run with a local canonical cache and the committed Ex1 handoff:
 
 ```bash
 python -m analyses.ps3_script ps4-ex3 \
-  --data data/final_shared_normalized_20261120.parquet \
-  --results-dir results \
+  --data data/ps4_claims.parquet \
+  --results-dir data/ps4_ex3 \
   --ex1-metrics-path results/ps4_ex1_monotonicity_metrics.json
 ```
 
@@ -222,10 +203,10 @@ On the 21-point `BonusMalus` grid, the constrained profile never decreases, whil
 Run from the repository root in the [shared `ps3` environment](PS4_SETUP.md):
 
 ```bash
-python -m analyses.ps3_script ps4-ex5 --data data/ps4_claims.parquet --results-dir results
+python -m analyses.ps3_script ps4-ex5 --data data/ps4_claims.parquet --results-dir data/ps4_ex5 --ex1-metrics-path results/ps4_ex1_monotonicity_metrics.json
 ```
 
-The [analysis](analyses/shapley_decomposition.py) refits the initial Tweedie GLM and the constrained LightGBM on the same fixed training split, with `PurePremium = ClaimAmountCut / Exposure` as the target and `Exposure` as the training weight. It checks the split against the Exercise 1 report and reuses its selected LightGBM parameters and increasing `BonusMalus` constraint without repeating cross-validation. When writing to a separate directory, pass `--ex1-metrics-path results/ps4_ex1_monotonicity_metrics.json` to use the committed report.
+The [analysis](analyses/shapley_decomposition.py) refits the initial Tweedie GLM and the constrained LightGBM on the same fixed training split, with `PurePremium = ClaimAmountCut / Exposure` as the target and `Exposure` as the training weight. It checks the split against the Exercise 1 report and reuses its selected LightGBM parameters and increasing `BonusMalus` constraint without repeating cross-validation.
 
 Both DALEX explainers use the same 1,000 training policies sampled with seed 42. They evaluate the first test policy (`IDpol=13`) with `predict_parts(type="shap")`, averaging over 25 feature orderings with the same seed. The [interactive plot](results/ps4_ex5_shapley.html) shows both decompositions on a common scale (download the HTML and open it in a browser with internet access). The [JSON summary](results/ps4_ex5_shapley.json) contains the full numerical results.
 

@@ -38,7 +38,7 @@
     "2": {
       "title": "Learning curve",
       "source": "https://languid-citipati-d0d.notion.site/Ex-2-Learning-curve-2b632dea82c1818eaf55decdcb83b350",
-      "evidence_paths": ["analyses/ps3_script.py", "README.md"],
+      "evidence_paths": ["analyses/learning_curve.py", "results/learning_curve_notes.md"],
       "requirements": [
         {"id": "PS4-2a", "requirement": "Refit the constrained LightGBM with the best cross-validated parameters from Ex1, keeping the BonusMalus constraint."},
         {"id": "PS4-2b", "requirement": "Pass both training and test datasets through eval_set, using the fitted training preprocessing and corresponding Exposure weights. Keep the test curves out of parameter selection."},
@@ -48,7 +48,7 @@
     "3": {
       "title": "Metrics function",
       "source": "https://languid-citipati-d0d.notion.site/Ex-3-Metrics-function-2b632dea82c1812b994fe7e49e878283",
-      "evidence_paths": ["ps3/evaluation/__init__.py", "ps3/evaluation/_evaluate_predictions.py", "README.md"],
+      "evidence_paths": ["ps3/evaluation/__init__.py", "ps3/evaluation/_evaluate_predictions.py", "analyses/evaluation_metrics.py", "results/ps4_ex3_metrics.csv"],
       "requirements": [
         {"id": "PS4-3a", "requirement": "Define evaluate_predictions in evaluation/_evaluate_predictions.py, export it from the evaluation package, and accept actual outcomes, predictions and sample weights."},
         {"id": "PS4-3b", "requirement": "Compute bias relative to the actual exposure-adjusted mean, weighted deviance, weighted MAE and weighted RMSE. Return a DataFrame indexed by metric name."},
@@ -58,7 +58,7 @@
     "4": {
       "title": "Evaluation plots",
       "source": "https://languid-citipati-d0d.notion.site/Ex-4-Evaluation-plots-2b632dea82c181a4a48dc5db7023af04",
-      "evidence_paths": ["analyses/ps3_script.py", "README.md"],
+      "evidence_paths": ["analyses/pdp_comparison.py", "figures/ps4_ex4_pdp/pdp_settings.json"],
       "requirements": [
         {"id": "PS4-4a", "requirement": "Use DALEX Explainer with fitted constrained and unconstrained LightGBM estimators or pipelines, and compatible model inputs."},
         {"id": "PS4-4b", "requirement": "Compute partial dependence via DALEX model_profile for all modelling features, and plot and compare both models on comparable backgrounds and grids."}
@@ -67,7 +67,7 @@
     "5": {
       "title": "Shapley decompositions",
       "source": "https://languid-citipati-d0d.notion.site/Ex-5-Shapley-2b632dea82c18148b457e0cb69316dde",
-      "evidence_paths": ["analyses/ps3_script.py", "README.md"],
+      "evidence_paths": ["analyses/shapley_decomposition.py", "results/ps4_ex5_shapley.json"],
       "requirements": [
         {"id": "PS4-5a", "requirement": "Create DALEX explainers for the initial GLM and constrained LightGBM using comparable background data and explain the same selected test policy."},
         {"id": "PS4-5b", "requirement": "Call predict_parts with type='shap' for both models and plot both decompositions."},

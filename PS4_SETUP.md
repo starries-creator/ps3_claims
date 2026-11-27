@@ -21,28 +21,30 @@ python -m analyses.ps3_script check-data --data data/ps4_claims.parquet
 
 Expect 678,013 policies (542,286 training and 135,727 test). Use the fixed `IDpol` split, `ClaimAmountCut / Exposure` as the pure premium target, `Exposure` as the weight, and Tweedie power 1.5. Keep data caches, fitted models, and per-policy predictions local.
 
-## Reproduce Exercise 1 for the other exercises
+## Reproduce all five exercises
+
+```bash
+python -m analyses.ps3_script ps4-all --data data/ps4_claims.parquet --results-dir data/reproduced/ps4
+```
+
+The command runs the exercises in order. It writes and reuses the Exercise 1 report in the same output directory. Exercise 3 also reads the generated held-out predictions. Exercises 2, 4 and 5 fit the models their analyses need using the selected settings, without repeating cross-validation.
+
+## Run a single exercise
 
 ```bash
 python -m analyses.ps3_script ps4-ex1 --data data/ps4_claims.parquet --results-dir data/ps4_ex1
 ```
 
-Use the selected parameters and transformed feature order in `data/ps4_ex1/ps4_ex1_monotonicity_metrics.json`. Join `data/ps4_ex1/ps4_ex1_test_predictions.csv` by `IDpol` for paired evaluation. For model explanations, use the fitted preprocessing for each model and use the same background sample when comparing models.
+For Exercises 2–5, supply a matching Exercise 1 report. For example, this command uses the committed report for the canonical data:
 
-For Exercise 4, obtain both fitted pipelines in the same Python process.
-
-```python
-import pandas as pd
-
-from analyses.lgbm_monotonicity import run_monotonicity_comparison
-
-claims = pd.read_parquet("data/ps4_claims.parquet")
-models, _, _, _ = run_monotonicity_comparison(claims, "data/ps4_ex1")
-constrained_lgbm = models["constrained_lgbm"]
-unconstrained_lgbm = models["unconstrained_lgbm"]
+```bash
+python -m analyses.ps3_script ps4-ex4 \
+  --data data/ps4_claims.parquet \
+  --results-dir data/ps4_ex4 \
+  --ex1-metrics-path results/ps4_ex1_monotonicity_metrics.json
 ```
 
-Pass the same raw feature columns to both pipelines. Each pipeline applies its fitted preprocessing before predicting.
+If the report is already in the selected output directory, `--ex1-metrics-path` can be omitted. Exercise 3 checks the IDs and deviance of any available Exercise 1 predictions. Without a prediction CSV, it refits both models with the report's selected parameters. The [README](README.md) links the submitted outputs and separate commands for all five exercises.
 
 ## PS4 pull request checks
 
