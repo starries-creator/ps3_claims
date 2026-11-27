@@ -179,3 +179,33 @@ def test_cli_runs_ps3_sections_in_assignment_order(tmp_path, monkeypatch):
 
     assert outputs.is_dir()
     assert calls == list(stages)
+
+
+def test_cli_runs_ps4_with_one_dataset_and_the_new_ex1_handoff(tmp_path, monkeypatch):
+    frame = object()
+    calls = []
+    handoff = tmp_path / "ps4_ex1_monotonicity_metrics.json"
+
+    def load(*_):
+        calls.append("load")
+        return frame
+
+    def record(exercise):
+        def run(data, results_dir):
+            assert data is frame
+            assert results_dir == tmp_path
+            if exercise == 1:
+                handoff.write_text("{}", encoding="utf-8")
+            else:
+                assert handoff.is_file()
+            calls.append(exercise)
+
+        return run
+
+    monkeypatch.setattr(ps3_script, "load_input_data", load)
+    for exercise in range(1, 6):
+        monkeypatch.setattr(ps3_script, f"run_ps4_ex{exercise}", record(exercise))
+
+    ps3_script.main(["ps4-all", "--results-dir", str(tmp_path)])
+
+    assert calls == ["load", 1, 2, 3, 4, 5]

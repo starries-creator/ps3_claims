@@ -1,5 +1,5 @@
 # %% Imports
-"""Run the PS3 claims modelling exercises and PS4 model evaluation."""
+"""Run PS3 claims modelling and all five PS4 exercises from the repository root."""
 
 import argparse
 import hashlib
@@ -113,6 +113,7 @@ def run_ps4_ex1(frame, results_dir):
     print(json.dumps(metrics, indent=2, allow_nan=False))
     return metrics
 
+
 # %% PS4 Exercise 2 — Learning curve
 
 def run_ps4_ex2(frame, results_dir, ex1_metrics_path=None):
@@ -123,7 +124,6 @@ def run_ps4_ex2(frame, results_dir, ex1_metrics_path=None):
         results_dir,
         ex1_metrics_path=ex1_metrics_path,
     )
-
     return metrics
 
 
@@ -229,7 +229,8 @@ def main(argv=None):
         "action",
         nargs="?",
         default="benchmark",
-        choices=["check-data", *ps3_sections, "metrics", "all", *ps4_sections],
+        choices=["check-data", *ps3_sections, "metrics", "all", *ps4_sections, "ps4-all"],
+        help="Use all for the PS3 modelling sequence or ps4-all for PS4 Exercises 1 through 5.",
     )
     parser.add_argument(
         "--results-dir",
@@ -266,6 +267,9 @@ def main(argv=None):
     )
     args = parser.parse_args(argv)
 
+    if args.action == "ps4-all" and (args.ex1_metrics_path or args.predictions_path):
+        parser.error("ps4-all uses the Exercise 1 handoff it creates in --results-dir")
+
     if args.action == "metrics":
         archive_results(args.results_dir)
         print(f"Saved {write_metrics_csv(args.results_dir)}")
@@ -282,6 +286,11 @@ def main(argv=None):
     if args.action == "check-data":
         train, test = sample_frames(frame)
         print(f"Validated {len(frame):,} policies ({len(train):,} train; {len(test):,} test)")
+        return
+    if args.action == "ps4-all":
+        for action, run_section in ps4_sections.items():
+            print(f"Running {action}", flush=True)
+            run_section(frame, args.results_dir)
         return
     if args.action in ps4_sections:
         if args.action == "ps4-ex3":
@@ -308,7 +317,7 @@ def main(argv=None):
 
 
 # %% Command-line entry point
-# In an interactive window, call main(["benchmark"]) or select another section.
+# In an interactive window, call main(["all"]) for PS3 or main(["ps4-all"]) for PS4.
 if (
     __name__ == "__main__"
     and "__file__" in globals()

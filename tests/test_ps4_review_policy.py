@@ -96,7 +96,8 @@ def test_submission_rules_use_pr_description_and_python_changes(
                 "submitted_files"
             ]
         assert {"PS4-S3", "PS4-S4"} <= {item["id"] for item in evidence["criteria"]}
-        assert ("analyses/learning_curve.py" in evidence["snapshots"]) == compliant
+        assert "analyses/learning_curve.py" in evidence["snapshots"]
+        assert ("analyses/learning_curve.py" in changes) == compliant
         items = [
             {
                 "id": item["id"],
